@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { INITIAL_DEPARTMENTS } from '../data/initialData';
-import { db, rtdb } from '../services/firebase';
+import { db } from '../services/firebase';
 import { 
   collection, 
   doc, 
@@ -11,14 +11,6 @@ import {
   deleteDoc, 
   onSnapshot 
 } from 'firebase/firestore';
-import { 
-  ref, 
-  set, 
-  get, 
-  onValue, 
-  update as updateRt, 
-  remove as removeRt 
-} from 'firebase/database';
 import { realtimeService } from '../services/realtime';
 
 const DataContext = createContext(null);
@@ -31,6 +23,7 @@ export const DataProvider = ({ children }) => {
   const [researchCases, setResearchCases] = useState([]);
   const [knowledgeArticles, setKnowledgeArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [firestorePermissionError, setFirestorePermissionError] = useState(false);
   const [savedSolutions, setSavedSolutions] = useState(() => {
     try {
       const saved = localStorage.getItem('cropcare_saved_solutions') || localStorage.getItem('farmconnect_saved_solutions');
@@ -40,22 +33,6 @@ export const DataProvider = ({ children }) => {
     }
   });
 
-  // Purge legacy dummy mock data from localStorage once on boot
-  useEffect(() => {
-    try {
-      const legacyKeys = [
-        'farmconnect_issues',
-        'farmconnect_issue_updates',
-        'farmconnect_expert_responses',
-        'farmconnect_research_cases',
-        'farmconnect_knowledge_articles',
-        'farmconnect_notifications',
-        'farmconnect_users'
-      ];
-      legacyKeys.forEach(k => localStorage.removeItem(k));
-    } catch (e) {}
-  }, []);
-
   // Save Bookmarks
   useEffect(() => {
     try {
@@ -63,96 +40,81 @@ export const DataProvider = ({ children }) => {
     } catch (e) {}
   }, [savedSolutions]);
 
-  // 1. Live Firestore + RTDB Dual Listeners
+  // 1. Pure Cloud Firestore Real-Time Listeners (No Realtime Database)
   useEffect(() => {
-    let unsubIssuesFs = () => {}, unsubUpdatesFs = () => {}, unsubRespFs = () => {};
-    let unsubRcFs = () => {}, unsubKbFs = () => {}, unsubDeptsFs = () => {}, unsubNotifsFs = () => {};
+    if (!db) return;
 
-    // Firestore Listeners
-    if (db) {
-      try {
-        unsubIssuesFs = onSnapshot(collection(db, 'issues'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setIssues(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-          }
-        }, () => {});
+    let unsubIssues = () => {}, unsubUpdates = () => {}, unsubResp = () => {};
+    let unsubRc = () => {}, unsubKb = () => {}, unsubDepts = () => {}, unsubNotifs = () => {};
 
-        unsubUpdatesFs = onSnapshot(collection(db, 'issue_updates'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setIssueUpdates(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-          }
-        }, () => {});
+    const handleFirestoreError = (err, collectionName) => {
+      console.warn(`Firestore [${collectionName}] notice:`, err?.code || err?.message || err);
+      if (err?.code === 'permission-denied') {
+        setFirestorePermissionError(true);
+      }
+    };
 
-        unsubRespFs = onSnapshot(collection(db, 'expert_responses'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setExpertResponses(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-          }
-        }, () => {});
+    try {
+      // 1. Listen to Issues
+      unsubIssues = onSnapshot(collection(db, 'issues'), (snap) => {
+        setFirestorePermissionError(false);
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setIssues(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      }, (err) => handleFirestoreError(err, 'issues'));
 
-        unsubRcFs = onSnapshot(collection(db, 'research_cases'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setResearchCases(list.sort((a, b) => new Date(b.lastUpdated || b.startDate || 0) - new Date(a.lastUpdated || a.startDate || 0)));
-          }
-        }, () => {});
+      // 2. Listen to Issue Timeline Updates
+      unsubUpdates = onSnapshot(collection(db, 'issue_updates'), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setIssueUpdates(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      }, (err) => handleFirestoreError(err, 'issue_updates'));
 
-        unsubKbFs = onSnapshot(collection(db, 'knowledge_articles'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setKnowledgeArticles(list);
-          }
-        }, () => {});
+      // 3. Listen to Expert Responses
+      unsubResp = onSnapshot(collection(db, 'expert_responses'), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setExpertResponses(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      }, (err) => handleFirestoreError(err, 'expert_responses'));
 
-        unsubDeptsFs = onSnapshot(collection(db, 'departments'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setDepartments(list);
-          }
-        }, () => {});
+      // 4. Listen to Research Cases
+      unsubRc = onSnapshot(collection(db, 'research_cases'), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setResearchCases(list.sort((a, b) => new Date(b.lastUpdated || b.startDate || 0) - new Date(a.lastUpdated || a.startDate || 0)));
+      }, (err) => handleFirestoreError(err, 'research_cases'));
 
-        unsubNotifsFs = onSnapshot(collection(db, 'notifications'), (snap) => {
-          if (!snap.empty) {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setNotifications(list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)));
-          }
-        }, () => {});
-      } catch (e) {}
-    }
+      // 5. Listen to Knowledge Articles
+      unsubKb = onSnapshot(collection(db, 'knowledge_articles'), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setKnowledgeArticles(list);
+      }, (err) => handleFirestoreError(err, 'knowledge_articles'));
 
-    // RTDB Fallback / Parallel Sync
-    let unsubRtIssues = () => {};
-    if (rtdb) {
-      try {
-        unsubRtIssues = onValue(ref(rtdb, 'issues'), (snap) => {
-          if (snap.exists()) {
-            const val = snap.val();
-            const list = Object.keys(val).map(k => ({ id: k, ...val[k] }));
-            setIssues(prev => {
-              const map = new Map(prev.map(i => [i.id, i]));
-              list.forEach(i => map.set(i.id, i));
-              return Array.from(map.values()).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-            });
-          }
-        }, () => {});
-      } catch (e) {}
+      // 6. Listen to Departments
+      unsubDepts = onSnapshot(collection(db, 'departments'), (snap) => {
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setDepartments(list);
+        }
+      }, (err) => handleFirestoreError(err, 'departments'));
+
+      // 7. Listen to Notifications
+      unsubNotifs = onSnapshot(collection(db, 'notifications'), (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setNotifications(list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)));
+      }, (err) => handleFirestoreError(err, 'notifications'));
+    } catch (e) {
+      console.warn("Firestore listeners initialization notice:", e);
     }
 
     return () => {
-      unsubIssuesFs();
-      unsubUpdatesFs();
-      unsubRespFs();
-      unsubRcFs();
-      unsubKbFs();
-      unsubDeptsFs();
-      unsubNotifsFs();
-      unsubRtIssues();
+      unsubIssues();
+      unsubUpdates();
+      unsubResp();
+      unsubRc();
+      unsubKb();
+      unsubDepts();
+      unsubNotifs();
     };
   }, []);
 
-  // 2. Real-Time BroadcastChannel Event Listener
+  // 2. Real-Time BroadcastChannel Event Listener (Local cross-tab instant responsiveness)
   useEffect(() => {
     const unsubscribeBus = realtimeService.subscribe((payload) => {
       const { type, data } = payload;
@@ -196,7 +158,7 @@ export const DataProvider = ({ children }) => {
     return () => unsubscribeBus();
   }, []);
 
-  // Add / Report New Problem
+  // Add / Report New Problem directly to Cloud Firestore
   const addIssue = async (newIssueData, user) => {
     const newIssueId = `ISSUE-${Date.now()}`;
     const dept = departments.find(d => d.name === newIssueData.department) || departments[0];
@@ -249,26 +211,18 @@ export const DataProvider = ({ children }) => {
       link: `/farmer/issues/${newIssueId}`
     };
 
-    // Save to Firestore
-    try {
-      if (db) {
+    // Save directly to Cloud Firestore
+    if (db) {
+      try {
         await setDoc(doc(db, 'issues', newIssueId), issueObj);
         await setDoc(doc(db, 'issue_updates', firstUpdate.id), firstUpdate);
         await setDoc(doc(db, 'notifications', notif.id), notif);
+      } catch (err) {
+        console.warn("Firestore addIssue write notice:", err);
+        if (err?.code === 'permission-denied') {
+          setFirestorePermissionError(true);
+        }
       }
-    } catch (err) {
-      console.warn("Firestore addIssue notice (rule check):", err);
-    }
-
-    // Save to Realtime Database
-    try {
-      if (rtdb) {
-        await set(ref(rtdb, `issues/${newIssueId}`), issueObj);
-        await set(ref(rtdb, `issue_updates/${firstUpdate.id}`), firstUpdate);
-        await set(ref(rtdb, `notifications/${notif.id}`), notif);
-      }
-    } catch (rtdbErr) {
-      console.warn("RTDB addIssue notice:", rtdbErr);
     }
 
     setIssues(prev => [issueObj, ...prev]);
@@ -284,7 +238,7 @@ export const DataProvider = ({ children }) => {
     return issueObj;
   };
 
-  // Add Progress Update to Timeline
+  // Add Progress Update to Timeline in Cloud Firestore
   const addIssueUpdate = async (issueId, userId, updateData) => {
     const updateObj = {
       id: `upd_${Date.now()}`,
@@ -299,25 +253,17 @@ export const DataProvider = ({ children }) => {
 
     const nextStatus = updateData.condition === "Resolved" ? "Resolved" : "Farmer Updating";
 
-    try {
-      if (db) {
+    if (db) {
+      try {
         await setDoc(doc(db, 'issue_updates', updateObj.id), updateObj);
         await updateDoc(doc(db, 'issues', issueId), {
           status: nextStatus,
           updatedAt: new Date().toISOString()
         });
+      } catch (err) {
+        if (err?.code === 'permission-denied') setFirestorePermissionError(true);
       }
-    } catch (err) {}
-
-    try {
-      if (rtdb) {
-        await set(ref(rtdb, `issue_updates/${updateObj.id}`), updateObj);
-        await updateRt(ref(rtdb, `issues/${issueId}`), {
-          status: nextStatus,
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (e) {}
+    }
 
     setIssueUpdates(prev => [updateObj, ...prev]);
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: nextStatus, updatedAt: new Date().toISOString() } : i));
@@ -326,7 +272,7 @@ export const DataProvider = ({ children }) => {
     return updateObj;
   };
 
-  // Expert Response & Treatment Prescription
+  // Expert Response & Treatment Prescription in Cloud Firestore
   const addExpertResponse = async (responseObj, expert) => {
     const newResponse = {
       id: `resp_${Date.now()}`,
@@ -349,8 +295,8 @@ export const DataProvider = ({ children }) => {
 
     const nextStatus = responseObj.isResolved ? "Resolved" : "Expert Responded";
 
-    try {
-      if (db) {
+    if (db) {
+      try {
         await setDoc(doc(db, 'expert_responses', newResponse.id), newResponse);
         await updateDoc(doc(db, 'issues', responseObj.issueId), {
           status: nextStatus,
@@ -358,20 +304,10 @@ export const DataProvider = ({ children }) => {
           assignedExpertName: expert.fullName,
           updatedAt: new Date().toISOString()
         });
+      } catch (err) {
+        if (err?.code === 'permission-denied') setFirestorePermissionError(true);
       }
-    } catch (err) {}
-
-    try {
-      if (rtdb) {
-        await set(ref(rtdb, `expert_responses/${newResponse.id}`), newResponse);
-        await updateRt(ref(rtdb, `issues/${responseObj.issueId}`), {
-          status: nextStatus,
-          assignedExpertId: expert.uid || expert.id,
-          assignedExpertName: expert.fullName,
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (e) {}
+    }
 
     setExpertResponses(prev => [newResponse, ...prev]);
     setIssues(prev => prev.map(i => i.id === responseObj.issueId ? {
@@ -404,12 +340,11 @@ export const DataProvider = ({ children }) => {
         relatedIssues: [responseObj.issueId]
       };
 
-      try {
-        if (db) await setDoc(doc(db, 'knowledge_articles', newKbArticle.id), newKbArticle);
-      } catch (e) {}
-      try {
-        if (rtdb) await set(ref(rtdb, `knowledge_articles/${newKbArticle.id}`), newKbArticle);
-      } catch (e) {}
+      if (db) {
+        try {
+          await setDoc(doc(db, 'knowledge_articles', newKbArticle.id), newKbArticle);
+        } catch (e) {}
+      }
 
       setKnowledgeArticles(prev => [newKbArticle, ...prev]);
       realtimeService.broadcast('KB_PUBLISHED', newKbArticle);
@@ -419,7 +354,7 @@ export const DataProvider = ({ children }) => {
     return newResponse;
   };
 
-  // Convert Issue to Scientific Research Case
+  // Convert Issue to Scientific Research Case in Cloud Firestore
   const convertToResearchCase = async (issueId, researchDetails, expert) => {
     const targetIssue = issues.find(i => i.id === issueId);
     const newRcId = `RC-${300 + researchCases.length + 1}`;
@@ -442,25 +377,15 @@ export const DataProvider = ({ children }) => {
       conclusion: "Under scientific study."
     };
 
-    try {
-      if (db) {
+    if (db) {
+      try {
         await setDoc(doc(db, 'research_cases', newRcId), newRc);
         await updateDoc(doc(db, 'issues', issueId), {
           status: "Research Required",
           updatedAt: new Date().toISOString()
         });
-      }
-    } catch (err) {}
-
-    try {
-      if (rtdb) {
-        await set(ref(rtdb, `research_cases/${newRcId}`), newRc);
-        await updateRt(ref(rtdb, `issues/${issueId}`), {
-          status: "Research Required",
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (e) {}
+      } catch (err) {}
+    }
 
     setResearchCases(prev => [newRc, ...prev]);
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: "Research Required", updatedAt: new Date().toISOString() } : i));
@@ -469,25 +394,16 @@ export const DataProvider = ({ children }) => {
     return newRc;
   };
 
-  // Update Research Case
+  // Update Research Case in Cloud Firestore
   const updateResearchCase = async (rcId, updatedFields) => {
-    try {
-      if (db) {
+    if (db) {
+      try {
         await updateDoc(doc(db, 'research_cases', rcId), {
           ...updatedFields,
           lastUpdated: new Date().toISOString().split('T')[0]
         });
-      }
-    } catch (err) {}
-
-    try {
-      if (rtdb) {
-        await updateRt(ref(rtdb, `research_cases/${rcId}`), {
-          ...updatedFields,
-          lastUpdated: new Date().toISOString().split('T')[0]
-        });
-      }
-    } catch (e) {}
+      } catch (err) {}
+    }
 
     setResearchCases(prev => prev.map(rc => rc.id === rcId ? {
       ...rc,
@@ -498,7 +414,7 @@ export const DataProvider = ({ children }) => {
     realtimeService.broadcast('RESEARCH_UPDATED', { rcId, updatedFields });
   };
 
-  // Vote Knowledge Base Article Helpfulness
+  // Vote Knowledge Base Article Helpfulness in Cloud Firestore
   const voteKnowledgeArticle = async (articleId, isHelpful) => {
     const target = knowledgeArticles.find(a => a.id === articleId);
     if (!target) return;
@@ -506,29 +422,20 @@ export const DataProvider = ({ children }) => {
     const newYes = isHelpful ? target.helpfulYes + 1 : target.helpfulYes;
     const newNo = !isHelpful ? target.helpfulNo + 1 : target.helpfulNo;
 
-    try {
-      if (db) {
+    if (db) {
+      try {
         await updateDoc(doc(db, 'knowledge_articles', articleId), {
           helpfulYes: newYes,
           helpfulNo: newNo
         });
-      }
-    } catch (e) {}
-
-    try {
-      if (rtdb) {
-        await updateRt(ref(rtdb, `knowledge_articles/${articleId}`), {
-          helpfulYes: newYes,
-          helpfulNo: newNo
-        });
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
 
     setKnowledgeArticles(prev => prev.map(a => a.id === articleId ? { ...a, helpfulYes: newYes, helpfulNo: newNo } : a));
     realtimeService.broadcast('ARTICLE_VOTED', { articleId, isHelpful });
   };
 
-  // Add Department Division
+  // Add Department in Cloud Firestore
   const addDepartment = async (deptData) => {
     const newDept = {
       id: `dept_${Date.now()}`,
@@ -538,28 +445,24 @@ export const DataProvider = ({ children }) => {
       expertCount: deptData.expertCount || 0
     };
 
-    try {
-      if (db) await setDoc(doc(db, 'departments', newDept.id), newDept);
-    } catch (err) {}
-
-    try {
-      if (rtdb) await set(ref(rtdb, `departments/${newDept.id}`), newDept);
-    } catch (e) {}
+    if (db) {
+      try {
+        await setDoc(doc(db, 'departments', newDept.id), newDept);
+      } catch (err) {}
+    }
 
     setDepartments(prev => [...prev, newDept]);
     realtimeService.broadcast('DEPARTMENT_ADDED', newDept);
     return newDept;
   };
 
-  // Delete Department Division
+  // Delete Department in Cloud Firestore
   const deleteDepartment = async (deptId) => {
-    try {
-      if (db) await deleteDoc(doc(db, 'departments', deptId));
-    } catch (err) {}
-
-    try {
-      if (rtdb) await removeRt(ref(rtdb, `departments/${deptId}`));
-    } catch (e) {}
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'departments', deptId));
+      } catch (err) {}
+    }
 
     setDepartments(prev => prev.filter(d => d.id !== deptId));
     realtimeService.broadcast('DEPARTMENT_DELETED', { id: deptId });
@@ -570,17 +473,258 @@ export const DataProvider = ({ children }) => {
     setSavedSolutions(prev => prev.includes(articleId) ? prev.filter(id => id !== articleId) : [...prev, articleId]);
   };
 
-  // Mark Notification Read
+  // Mark Notification Read in Cloud Firestore
   const markNotificationRead = async (notifId) => {
-    try {
-      if (db) await updateDoc(doc(db, 'notifications', notifId), { read: true });
-    } catch (e) {}
-
-    try {
-      if (rtdb) await updateRt(ref(rtdb, `notifications/${notifId}`), { read: true });
-    } catch (e) {}
-
+    if (db) {
+      try {
+        await updateDoc(doc(db, 'notifications', notifId), { read: true });
+      } catch (e) {}
+    }
     setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+  };
+
+  // Seed baseline sample data directly into Cloud Firestore
+  const seedSampleFirestoreData = async () => {
+    if (!db) throw new Error("Cloud Firestore is not initialized.");
+
+    const sampleDepts = INITIAL_DEPARTMENTS;
+    const sampleIssues = [
+      {
+        id: "ISSUE-1001",
+        farmerId: "usr_farmer_ramesh",
+        farmerName: "Ramesh Patil",
+        farmerMobile: "9822014589",
+        title: "Severe Early Blight with Concentric Rings on Tomato Leaves",
+        cropName: "Tomato",
+        growthStage: "Flowering & Fruit Formation",
+        firstNoticedDate: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
+        category: "Crop Disease",
+        description: "Dark brown target-shaped concentric rings appeared on lower leaves after heavy monsoon shower. Lesions are spreading upwards toward stem and young green fruit clusters.",
+        images: ["https://images.unsplash.com/photo-1592417817098-8f3d6eb1475a?auto=format&fit=crop&w=800&q=80"],
+        state: "Maharashtra",
+        district: "Nashik",
+        taluka: "Dindori",
+        village: "Janori",
+        coordinates: "20.0063° N, 73.7902° E",
+        departmentId: "dept_1",
+        departmentName: "Plant Pathology",
+        assignedExpertId: "EXP-101",
+        assignedExpertName: "Dr. Anil Sharma",
+        status: "Expert Responded",
+        priority: "High",
+        createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
+      },
+      {
+        id: "ISSUE-1002",
+        farmerId: "usr_farmer_suresh",
+        farmerName: "Suresh Chavan",
+        farmerMobile: "9422033412",
+        title: "Downy Mildew White Woolly Growth Under Grape Canopies",
+        cropName: "Grapes",
+        growthStage: "Berry Development",
+        firstNoticedDate: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0],
+        category: "Crop Disease",
+        description: "Yellow oily spots on upper leaf surface with dense white fungal growth underneath due to morning fog and high humidity. Young clusters turning brown.",
+        images: ["https://images.unsplash.com/photo-1537640538966-79f369143f8f?auto=format&fit=crop&w=800&q=80"],
+        state: "Maharashtra",
+        district: "Sangli",
+        taluka: "Miraj",
+        village: "Kupwad",
+        coordinates: "16.8524° N, 74.5815° E",
+        departmentId: "dept_1",
+        departmentName: "Plant Pathology",
+        assignedExpertId: "EXP-101",
+        assignedExpertName: "Dr. Anil Sharma",
+        status: "Submitted",
+        priority: "High",
+        createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+        updatedAt: new Date(Date.now() - 2 * 86400000).toISOString()
+      },
+      {
+        id: "ISSUE-1003",
+        farmerId: "usr_farmer_vikram",
+        farmerName: "Vikram Shinde",
+        farmerMobile: "9766041235",
+        title: "Pink Bollworm Larvae Infestation in Cotton Squares",
+        cropName: "Cotton",
+        growthStage: "Boll Formation",
+        firstNoticedDate: new Date(Date.now() - 1 * 86400000).toISOString().split('T')[0],
+        category: "Pest Attack",
+        description: "Rosetted flower blossoms observed in 4 acres. Bolls show boreholes and internal fiber staining caused by pink bollworm caterpillars.",
+        images: ["https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=800&q=80"],
+        state: "Maharashtra",
+        district: "Jalgaon",
+        taluka: "Chalisgaon",
+        village: "Patonda",
+        coordinates: "20.4625° N, 75.0189° E",
+        departmentId: "dept_2",
+        departmentName: "Entomology",
+        assignedExpertId: "",
+        assignedExpertName: "Unassigned",
+        status: "Submitted",
+        priority: "Urgent",
+        createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
+      },
+      {
+        id: "ISSUE-1004",
+        farmerId: "usr_farmer_ganesh",
+        farmerName: "Ganesh Kulkarni",
+        farmerMobile: "9890012378",
+        title: "Red Rot Stem Discoloration & Drying in Sugarcane",
+        cropName: "Sugarcane",
+        growthStage: "Grand Growth",
+        firstNoticedDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0],
+        category: "Crop Disease",
+        description: "Third and fourth leaves from top showing yellowing and withering. Cane split reveals red pith with distinct white transverse bands and alcoholic smell.",
+        images: ["https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80"],
+        state: "Maharashtra",
+        district: "Kolhapur",
+        taluka: "Karveer",
+        village: "Uchgaon",
+        coordinates: "16.7050° N, 74.2433° E",
+        departmentId: "dept_1",
+        departmentName: "Plant Pathology",
+        assignedExpertId: "EXP-101",
+        assignedExpertName: "Dr. Anil Sharma",
+        status: "Resolved",
+        priority: "High",
+        createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
+      }
+    ];
+
+    const sampleResponses = [
+      {
+        id: "resp_1001",
+        issueId: "ISSUE-1001",
+        expertId: "EXP-101",
+        expertName: "Dr. Anil Sharma",
+        expertTitle: "Senior Plant Pathologist",
+        expertInstitution: "Maharashtra State Agricultural University",
+        diagnosis: "Early Blight (Alternaria solani)",
+        possibleCause: "High leaf wetness duration combined with warm day temperatures (28-32°C).",
+        recommendation: "Immediate prophylactic spray of Mancozeb 75% WP or Azoxystrobin.",
+        treatment: "1. Spray Mancozeb 75 WP @ 2.5g/liter or Chlorothalonil 75 WP @ 2g/liter.\n2. In severe infection, spray Difenoconazole 25 EC @ 1ml/liter.\n3. Ensure uniform coverage on underside of leaves.",
+        prevention: "Prune bottom leaves touching soil. Avoid overhead sprinkler irrigation during late evenings.",
+        verified: true,
+        publishedToKb: true,
+        isResolved: false,
+        createdAt: new Date(Date.now() - 2 * 86400000).toISOString()
+      }
+    ];
+
+    const sampleKb = [
+      {
+        id: "KB-101",
+        title: "Tomato Early Blight Diagnosis & Complete Fungicidal Schedule",
+        crop: "Tomato",
+        category: "Crop Disease",
+        department: "Plant Pathology",
+        symptoms: "Concentric target spots on older leaves, yellow halo around lesions, stem cankers.",
+        diagnosis: "Alternaria solani fungal infection.",
+        treatment: "Spray Mancozeb 75% WP (2.5 g/L) followed by Difenoconazole 25% EC (1 ml/L) at 10-day intervals.",
+        preventiveMeasures: "Crop rotation with non-solanaceous crops, wider plant spacing for aeration.",
+        verifiedBy: "Dr. Anil Sharma (Plant Pathology Dept)",
+        verifiedDate: new Date().toISOString().split('T')[0],
+        helpfulYes: 24,
+        helpfulNo: 1,
+        views: 142,
+        image: "https://images.unsplash.com/photo-1592417817098-8f3d6eb1475a?auto=format&fit=crop&w=800&q=80",
+        relatedIssues: ["ISSUE-1001"]
+      }
+    ];
+
+    const sampleUsers = [
+      {
+        id: "usr_farmer_ganesh",
+        uid: "usr_farmer_ganesh",
+        fullName: "Ganesh Kulkarni",
+        email: "ganesh.farmer@cropcare.in",
+        role: "Farmer",
+        status: "Active",
+        state: "Maharashtra",
+        district: "Kolhapur",
+        taluka: "Karveer",
+        village: "Uchgaon",
+        mobile: "9890012378",
+        createdAt: new Date(Date.now() - 10 * 86400000).toISOString()
+      },
+      {
+        id: "usr_farmer_suresh",
+        uid: "usr_farmer_suresh",
+        fullName: "Suresh Patil",
+        email: "suresh.farmer@cropcare.in",
+        role: "Farmer",
+        status: "Active",
+        state: "Maharashtra",
+        district: "Nashik",
+        taluka: "Niphad",
+        village: "Pimpalgaon",
+        mobile: "9822019944",
+        createdAt: new Date(Date.now() - 12 * 86400000).toISOString()
+      },
+      {
+        id: "EXP-101",
+        uid: "EXP-101",
+        fullName: "Dr. Anil Sharma",
+        email: "dr.anil.sharma@cropcare.gov.in",
+        role: "Agricultural Expert / Researcher",
+        status: "Approved",
+        department: "Plant Pathology",
+        departmentId: "dept_1",
+        title: "Senior Plant Pathologist",
+        institution: "Maharashtra State Agricultural University",
+        specialization: "Fungal Diseases & Integrated Pest Management",
+        verifiedBadge: true,
+        createdAt: new Date(Date.now() - 30 * 86400000).toISOString()
+      },
+      {
+        id: "EXP-102",
+        uid: "EXP-102",
+        fullName: "Dr. Sunita Deshmukh",
+        email: "dr.sunita@cropcare.gov.in",
+        role: "Agricultural Expert / Researcher",
+        status: "Pending Approval",
+        department: "Entomology",
+        departmentId: "dept_2",
+        title: "Entomology Specialist",
+        institution: "Dr. Panjabrao Deshmukh Krishi Vidyapeeth",
+        specialization: "Cotton Bollworm & Biological Control",
+        verifiedBadge: false,
+        createdAt: new Date(Date.now() - 2 * 86400000).toISOString()
+      }
+    ];
+
+    try {
+      // Write sample users to Cloud Firestore
+      for (const u of sampleUsers) {
+        await setDoc(doc(db, "users", u.id), u);
+      }
+      // Write all sample docs to Cloud Firestore
+      for (const d of sampleDepts) {
+        await setDoc(doc(db, "departments", d.id), d);
+      }
+      for (const iss of sampleIssues) {
+        await setDoc(doc(db, "issues", iss.id), iss);
+      }
+      for (const resp of sampleResponses) {
+        await setDoc(doc(db, "expert_responses", resp.id), resp);
+      }
+      for (const kb of sampleKb) {
+        await setDoc(doc(db, "knowledge_articles", kb.id), kb);
+      }
+
+      setFirestorePermissionError(false);
+      return { success: true, count: sampleIssues.length };
+    } catch (err) {
+      console.warn("Firestore seed sample write notice:", err);
+      if (err?.code === 'permission-denied') {
+        setFirestorePermissionError(true);
+      }
+      return { success: false, error: err };
+    }
   };
 
   return (
@@ -593,6 +737,7 @@ export const DataProvider = ({ children }) => {
       knowledgeArticles,
       notifications,
       savedSolutions,
+      firestorePermissionError,
       addIssue,
       addIssueUpdate,
       addExpertResponse,
@@ -602,7 +747,9 @@ export const DataProvider = ({ children }) => {
       addDepartment,
       deleteDepartment,
       toggleSaveSolution,
-      markNotificationRead
+      markNotificationRead,
+      seedSampleFirestoreData,
+      resetDemoData: seedSampleFirestoreData
     }}>
       {children}
     </DataContext.Provider>

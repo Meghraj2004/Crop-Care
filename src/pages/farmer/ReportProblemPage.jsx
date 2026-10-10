@@ -90,7 +90,7 @@ export const ReportProblemPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedIssue, setSubmittedIssue] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.title || !formData.description) {
       alert("Please provide a problem title and symptoms description.");
@@ -98,14 +98,18 @@ export const ReportProblemPage = () => {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      const created = addIssue(formData, currentUser || { id: "usr_farmer_1", fullName: "Ramesh Patil", district: "Jalgaon" });
+    try {
+      const created = await addIssue(formData, currentUser || { id: "usr_farmer_1", fullName: "Ramesh Patil", district: "Jalgaon" });
       setIsSubmitting(false);
       setSubmittedIssue(created);
       setTimeout(() => {
         navigate(`/farmer/issues/${created.id}`);
-      }, 1800);
-    }, 600);
+      }, 1500);
+    } catch (err) {
+      setIsSubmitting(false);
+      console.error("Report problem error:", err);
+      alert("Failed to submit report: " + (err.message || 'Error occurred.'));
+    }
   };
 
   const categoriesOptions = [

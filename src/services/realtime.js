@@ -1,9 +1,8 @@
 // Real-Time Event Bus and Multi-Client Synchronization Service
 // Combines Firebase Realtime / Firestore cloud sync with native BroadcastChannel for instant local & cross-device real-time sync.
 
-import { rtdb, db, isFirebaseConfigured } from './firebase';
-import { ref, set, onValue } from 'firebase/database';
-import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from './firebase';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const CHANNEL_NAME = 'cropcare_realtime_channel';
 
@@ -41,27 +40,15 @@ class RealtimeService {
       });
     }
 
-    // 3. Firebase Cloud Real-Time Listener (cross-device & cloud synchronization)
-    if (isFirebaseConfigured) {
+    // 3. Cloud Firestore Real-Time Listener (cross-device & cloud synchronization)
+    if (isFirebaseConfigured && db) {
       this.initFirebaseCloudListener();
     }
   }
 
   initFirebaseCloudListener() {
     try {
-      if (rtdb) {
-        const eventsRef = ref(rtdb, 'realtime_events/latest');
-        onValue(eventsRef, (snapshot) => {
-          const val = snapshot.val();
-          if (val && val.senderId !== this.clientId) {
-            this.hasFirebaseCloud = true;
-            this.handleIncomingMessage(val);
-          }
-        }, (error) => {
-          // If RTDB permissions require auth, fallback to Firestore or local sync
-          console.info("Firebase RTDB listener active with rule fallback:", error?.message || error);
-        });
-      } else if (db) {
+      if (db) {
         const syncDocRef = doc(db, 'system_sync', 'realtime_events');
         onSnapshot(syncDocRef, (snap) => {
           if (snap.exists()) {
@@ -72,11 +59,12 @@ class RealtimeService {
             }
           }
         }, (error) => {
-          console.info("Firebase Firestore listener active with rule fallback:", error?.message || error);
+          // Rule fallback or permission denied notification
+          console.info("Firebase Cloud Firestore sync active (status:", error?.code || error?.message || 'ready', ")");
         });
       }
     } catch (err) {
-      console.warn("Firebase Cloud realtime initialization:", err);
+      console.warn("Cloud Firestore realtime listener initialization:", err);
     }
   }
 
@@ -92,7 +80,7 @@ class RealtimeService {
   }
 
   /**
-   * Broadcast an event to all open tabs and cloud devices in real-time
+   * Broadcast an event to all open tabs and cloud devices in real-time via Cloud Firestore
    * @param {string} type - Event identifier (e.g. 'ISSUE_CREATED', 'EXPERT_DIAGNOSED')
    * @param {object} data - Payload data
    * @param {object} meta - Optional alert metadata (title, message, roleTarget)
@@ -122,18 +110,13 @@ class RealtimeService {
       } catch (err) {}
     }
 
-    // 3. Broadcast to Firebase Cloud (Cross-device)
-    if (isFirebaseConfigured) {
+    // 3. Broadcast to Cloud Firestore (cross-device real-time sync)
+    if (isFirebaseConfigured && db) {
       try {
-        if (rtdb) {
-          const eventsRef = ref(rtdb, 'realtime_events/latest');
-          set(eventsRef, payload).catch(() => {});
-        } else if (db) {
-          const syncDocRef = doc(db, 'system_sync', 'realtime_events');
-          setDoc(syncDocRef, payload, { merge: true }).catch(() => {});
-        }
+        const syncDocRef = doc(db, 'system_sync', 'realtime_events');
+        setDoc(syncDocRef, payload, { merge: true }).catch(() => {});
       } catch (cloudErr) {
-        // Non-blocking fallback
+        // Non-blocking
       }
     }
   }

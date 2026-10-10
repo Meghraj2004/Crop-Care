@@ -21,17 +21,28 @@ export const FarmerRegisterPage = () => {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    registerFarmer(formData);
-    if (formData.preferredLanguage && formData.preferredLanguage !== language) {
-      changeLanguage(formData.preferredLanguage);
+    setErrorMessage('');
+    setSubmitting(true);
+    try {
+      await registerFarmer(formData);
+      if (formData.preferredLanguage && formData.preferredLanguage !== language) {
+        changeLanguage(formData.preferredLanguage);
+      }
+      setSubmitted(true);
+      setTimeout(() => {
+        navigate('/farmer/dashboard');
+      }, 1500);
+    } catch (err) {
+      console.error("Farmer register error:", err);
+      setErrorMessage(err.message || 'Registration failed.');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitted(true);
-    setTimeout(() => {
-      navigate('/farmer/dashboard');
-    }, 1500);
   };
 
   return (
@@ -58,6 +69,11 @@ export const FarmerRegisterPage = () => {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-xs font-semibold text-slate-700">
+              {errorMessage && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold">
+                  {errorMessage}
+                </div>
+              )}
               <div>
                 <label className="block mb-1 text-slate-800">{t('fullNameLabel')} *</label>
                 <div className="relative">

@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // CropCare Cloud Firestore Rules:
+    // Allows read and write access to all platform collections (users, issues, departments, etc.)
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

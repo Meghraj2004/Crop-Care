@@ -8,13 +8,11 @@ import {
   onAuthStateChanged 
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
-import { getDatabase, ref, set, onValue } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDUoPMaZ7IWSAXS6bwcaBduUXd_bm_mYGY",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "cropcare-21809.firebaseapp.com",
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://cropcare-21809-default-rtdb.firebaseio.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "cropcare-21809",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "cropcare-21809.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "903701833417",
@@ -25,7 +23,6 @@ export const firebaseConfig = {
 let app;
 let auth;
 let db;
-let rtdb;
 let storage;
 
 const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
@@ -38,14 +35,9 @@ try {
   }
   auth = getAuth(app);
   db = getFirestore(app);
-  try {
-    rtdb = getDatabase(app);
-  } catch (rtdbErr) {
-    console.info("Firebase Realtime Database optional module:", rtdbErr);
-  }
   storage = getStorage(app);
 } catch (error) {
   console.warn("Firebase initialization warning (falling back gracefully):", error);
 }
 
-export { app, auth, db, rtdb, storage, isFirebaseConfigured };
+export { app, auth, db, storage, isFirebaseConfigured };

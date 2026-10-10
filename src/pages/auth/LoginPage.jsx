@@ -17,7 +17,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export const LoginPage = () => {
-  const { login, currentUser, users } = useAuth();
+  const { login, currentUser, users, isExpertAccount } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -34,9 +34,13 @@ export const LoginPage = () => {
   const cleanEmail = email.trim().toLowerCase();
   const isExpertDetected = Boolean(
     cleanEmail.length > 3 && (
+      (isExpertAccount && isExpertAccount({ email: cleanEmail })) ||
       cleanEmail.includes('expert') ||
       cleanEmail.includes('scientist') ||
       cleanEmail.includes('dr.') ||
+      cleanEmail.includes('icar') ||
+      cleanEmail.includes('iari') ||
+      cleanEmail.includes('res.in') ||
       cleanEmail.endsWith('@agri.gov.in') ||
       users.some(u => (u.email || '').toLowerCase() === cleanEmail && u.role === 'Agricultural Expert / Researcher')
     )
