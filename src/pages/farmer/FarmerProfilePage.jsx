@@ -215,7 +215,7 @@ export const FarmerProfilePage = () => {
         </div>
 
         <p className="text-xs text-slate-600 leading-relaxed">
-          {t('Once you delete your account, your profile data, contact details, and session will be completely purged from FarmConnect. This action cannot be reversed.', 'Once you delete your account, your profile data, contact details, and session will be completely purged from FarmConnect. This action cannot be reversed.')}
+          {t('Once you delete your account, your profile data, contact details, and session will be completely purged from CropCare. This action cannot be reversed.', 'Once you delete your account, your profile data, contact details, and session will be completely purged from CropCare. This action cannot be reversed.')}
         </p>
 
         <button

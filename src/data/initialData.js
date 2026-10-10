@@ -1,4 +1,4 @@
-// Production Baseline Dataset for CropCare (FarmConnect) Platform
+// Production Baseline Dataset for CropCare Platform
 // Real data is dynamically persisted and loaded from Firebase Firestore & Authentication
 
 export const INITIAL_USERS = [];

@@ -19,6 +19,7 @@ import { KnowledgeArticleDetailsPage } from './pages/public/KnowledgeArticleDeta
 
 // Auth Pages
 import { LoginPage } from './pages/auth/LoginPage';
+import { AdminLoginPage } from './pages/auth/AdminLoginPage';
 import { FarmerRegisterPage } from './pages/auth/FarmerRegisterPage';
 import { ResearcherRegisterPage } from './pages/auth/ResearcherRegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
@@ -75,9 +76,11 @@ export default function App() {
 
                   {/* Auth Routes */}
                   <Route path="/login" element={<LoginPage />} />
+                  <Route path="/admin/login" element={<AdminLoginPage />} />
+                  <Route path="/admin-login" element={<Navigate to="/admin/login" replace />} />
                   <Route path="/register" element={<Navigate to="/register/farmer" replace />} />
                   <Route path="/register/farmer" element={<FarmerRegisterPage />} />
-                  <Route path="/register/researcher" element={<ResearcherRegisterPage />} />
+                  <Route path="/register/researcher" element={<Navigate to="/login" replace />} />
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
                   {/* Farmer Routes (Protected by Farmer Role) */}

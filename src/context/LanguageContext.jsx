@@ -16,12 +16,12 @@ Object.entries(TRANSLATIONS.English || {}).forEach(([key, value]) => {
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState(() => {
-    return localStorage.getItem('farmconnect_lang') || 'English';
+    return localStorage.getItem('cropcare_lang') || localStorage.getItem('farmconnect_lang') || 'English';
   });
 
   const changeLanguage = (newLang) => {
     setLanguage(newLang);
-    localStorage.setItem('farmconnect_lang', newLang);
+    localStorage.setItem('cropcare_lang', newLang);
   };
 
   /**

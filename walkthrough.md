@@ -1,6 +1,6 @@
-# FarmConnect (CropCare) Platform Walkthrough
+# CropCare Platform Walkthrough
 
-**FarmConnect (CropCare)** is a farmer-friendly digital platform built with React, Vite, Tailwind CSS, and Firebase integration. It connects farmers directly with Agriculture Department officers, plant pathologists, entomologists, and soil scientists.
+**CropCare** is a farmer-friendly digital platform built with React, Vite, Tailwind CSS, and Firebase integration. It connects farmers directly with Agriculture Department officers, plant pathologists, entomologists, and soil scientists.
 
 ---
 

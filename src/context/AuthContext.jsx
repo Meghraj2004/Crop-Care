@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   auth, 
   db, 
+  rtdb,
+  firebaseConfig,
   isFirebaseConfigured 
 } from '../services/firebase';
 import { 
@@ -20,6 +22,13 @@ import {
   deleteDoc, 
   onSnapshot 
 } from 'firebase/firestore';
+import { 
+  ref, 
+  set, 
+  get, 
+  onValue, 
+  remove 
+} from 'firebase/database';
 import { realtimeService } from '../services/realtime';
 
 const AuthContext = createContext(null);
@@ -29,7 +38,13 @@ export const AuthProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // 1. Firebase Authentication State Listener
+  // Helper to determine if an email is the official Admin account
+  const isSuperAdminEmail = (email = '') => {
+    const clean = email.toLowerCase().trim();
+    return clean === 'admin123@gamil.com' || clean === 'admin123@gmail.com' || clean === 'admin@cropcare.gov.in';
+  };
+
+  // 1. Listen to Firebase Auth state
   useEffect(() => {
     if (!auth) {
       setAuthLoading(false);
@@ -38,21 +53,56 @@ export const AuthProvider = ({ children }) => {
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          // Fetch user profile from Firestore
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userSnap = await getDoc(userDocRef);
+        const emailClean = (firebaseUser.email || '').toLowerCase().trim();
+        const isAdmin = isSuperAdminEmail(emailClean);
 
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
+        try {
+          let userProfile = null;
+
+          // Attempt read from Firestore
+          if (db) {
+            try {
+              const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+              if (userSnap.exists()) {
+                userProfile = { id: firebaseUser.uid, uid: firebaseUser.uid, ...userSnap.data() };
+              }
+            } catch (fsErr) {
+              // Firestore rule might block read
+            }
+          }
+
+          // Attempt read from RTDB if Firestore yielded nothing
+          if (!userProfile && rtdb) {
+            try {
+              const rtdbSnap = await get(ref(rtdb, `users/${firebaseUser.uid}`));
+              if (rtdbSnap.exists()) {
+                userProfile = { id: firebaseUser.uid, uid: firebaseUser.uid, ...rtdbSnap.val() };
+              }
+            } catch (rtErr) {}
+          }
+
+          if (isAdmin) {
+            const adminDoc = {
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              fullName: userProfile?.fullName || "Agriculture Department Administrator",
+              role: "Agriculture Department Admin",
+              department: "Directorate of Agriculture",
+              status: "Active",
+              verifiedBadge: true,
+              createdAt: userProfile?.createdAt || new Date().toISOString()
+            };
+            setCurrentUser(adminDoc);
+          } else if (userProfile) {
             setCurrentUser({
               id: firebaseUser.uid,
               uid: firebaseUser.uid,
               email: firebaseUser.email,
-              ...userData
+              ...userProfile
             });
           } else {
-            // Profile doc doesn't exist yet, fallback to basic auth info
+            // Fallback for non-admin
             setCurrentUser({
               id: firebaseUser.uid,
               uid: firebaseUser.uid,
@@ -63,15 +113,27 @@ export const AuthProvider = ({ children }) => {
             });
           }
         } catch (err) {
-          console.warn("Firestore user profile fetch notice:", err?.message || err);
-          setCurrentUser({
-            id: firebaseUser.uid,
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            fullName: firebaseUser.displayName || 'User',
-            role: 'Farmer',
-            status: 'Active'
-          });
+          console.warn("Auth sync notice:", err);
+          if (isAdmin) {
+            setCurrentUser({
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              fullName: "Agriculture Department Administrator",
+              role: "Agriculture Department Admin",
+              department: "Directorate of Agriculture",
+              status: "Active"
+            });
+          } else {
+            setCurrentUser({
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              fullName: firebaseUser.displayName || 'User',
+              role: 'Farmer',
+              status: 'Active'
+            });
+          }
         }
       } else {
         setCurrentUser(null);
@@ -82,36 +144,47 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribeAuth();
   }, []);
 
-  // 2. Real-Time Firestore Users Collection Listener
+  // 2. Real-Time Users sync (Firestore + RTDB listener)
   useEffect(() => {
-    if (!db) return;
+    let unsubFs = () => {};
+    let unsubRt = () => {};
 
-    let unsubscribeUsers = () => {};
-    try {
-      const usersColRef = collection(db, 'users');
-      unsubscribeUsers = onSnapshot(usersColRef, (snapshot) => {
-        const liveUsers = snapshot.docs.map(d => ({
-          id: d.id,
-          uid: d.id,
-          ...d.data()
-        }));
-        setUsers(liveUsers);
-
-        // If current user is logged in, sync their latest status (e.g. Approved badge)
-        if (auth?.currentUser) {
-          const selfDoc = liveUsers.find(u => u.id === auth.currentUser.uid);
-          if (selfDoc) {
-            setCurrentUser(prev => prev ? { ...prev, ...selfDoc } : selfDoc);
+    if (db) {
+      try {
+        unsubFs = onSnapshot(collection(db, 'users'), (snapshot) => {
+          if (!snapshot.empty) {
+            const live = snapshot.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() }));
+            setUsers(prev => {
+              const map = new Map(prev.map(u => [u.id, u]));
+              live.forEach(u => map.set(u.id, u));
+              return Array.from(map.values());
+            });
           }
-        }
-      }, (error) => {
-        console.info("Firestore users live sync notice (rule fallback active):", error?.message || error);
-      });
-    } catch (e) {
-      console.warn("Firestore users listener initialization error:", e);
+        }, () => {});
+      } catch (e) {}
     }
 
-    return () => unsubscribeUsers();
+    if (rtdb) {
+      try {
+        const usersRef = ref(rtdb, 'users');
+        unsubRt = onValue(usersRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            const list = Object.keys(data).map(k => ({ id: k, uid: k, ...data[k] }));
+            setUsers(prev => {
+              const map = new Map(prev.map(u => [u.id, u]));
+              list.forEach(u => map.set(u.id, u));
+              return Array.from(map.values());
+            });
+          }
+        }, () => {});
+      } catch (e) {}
+    }
+
+    return () => {
+      unsubFs();
+      unsubRt();
+    };
   }, []);
 
   // 3. Real-Time BroadcastChannel Cross-Tab Synchronization
@@ -121,20 +194,15 @@ export const AuthProvider = ({ children }) => {
       if (!data) return;
 
       switch (type) {
-        case 'RESEARCHER_REGISTERED':
+        case 'EXPERT_ADDED':
           setUsers(prev => prev.some(u => u.id === data.id) ? prev : [data, ...prev]);
-          break;
-        case 'RESEARCHER_APPROVED':
-          setUsers(prev => prev.map(u => u.id === data.userId ? { ...u, status: "Approved", verifiedBadge: true } : u));
-          setCurrentUser(prev => prev?.id === data.userId ? { ...prev, status: "Approved", verifiedBadge: true } : prev);
-          break;
-        case 'RESEARCHER_REJECTED':
-          setUsers(prev => prev.map(u => u.id === data.userId ? { ...u, status: "Rejected" } : u));
-          setCurrentUser(prev => prev?.id === data.userId ? { ...prev, status: "Rejected" } : prev);
           break;
         case 'USER_DELETED':
           setUsers(prev => prev.filter(u => u.id !== data.userId));
           setCurrentUser(prev => prev?.id === data.userId ? null : prev);
+          break;
+        case 'USER_UPDATED':
+          setUsers(prev => prev.map(u => u.id === data.id ? { ...u, ...data } : u));
           break;
         default:
           break;
@@ -144,26 +212,77 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribeBus();
   }, []);
 
-  // Login with Firebase Auth and verify Firestore Role
+  // Login handler
   const login = async (email, password, requiredRole = null) => {
     if (!auth) throw new Error("Firebase Auth service not ready.");
 
-    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-    const fbUser = userCredential.user;
+    const cleanEmail = email.trim();
+    const isAdmin = isSuperAdminEmail(cleanEmail);
 
-    // Fetch user profile from Firestore
-    let userProfile = null;
+    let userCredential;
     try {
-      const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
-      if (userDoc.exists()) {
-        userProfile = { id: fbUser.uid, uid: fbUser.uid, email: fbUser.email, ...userDoc.data() };
-      }
+      userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
     } catch (err) {
-      console.warn("Could not retrieve Firestore user document:", err);
+      // If admin account doesn't exist yet, automatically provision it with admin credentials
+      if (isAdmin && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
+        try {
+          userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        } catch (createErr) {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    const fbUser = userCredential.user;
+    let userProfile = null;
+
+    if (isAdmin) {
+      userProfile = {
+        id: fbUser.uid,
+        uid: fbUser.uid,
+        email: fbUser.email,
+        fullName: "Super Department Admin",
+        role: "Agriculture Department Admin",
+        department: "Directorate of Agriculture",
+        status: "Active",
+        verifiedBadge: true,
+        createdAt: new Date().toISOString()
+      };
+
+      // Write to both Firestore and RTDB
+      try {
+        if (db) await setDoc(doc(db, 'users', fbUser.uid), userProfile);
+      } catch (e) {}
+      try {
+        if (rtdb) await set(ref(rtdb, `users/${fbUser.uid}`), userProfile);
+      } catch (e) {}
+
+      setCurrentUser(userProfile);
+      return userProfile;
+    }
+
+    // Non-Admin: Fetch from Firestore or RTDB
+    if (db) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
+        if (userDoc.exists()) {
+          userProfile = { id: fbUser.uid, uid: fbUser.uid, email: fbUser.email, ...userDoc.data() };
+        }
+      } catch (e) {}
+    }
+
+    if (!userProfile && rtdb) {
+      try {
+        const rtSnap = await get(ref(rtdb, `users/${fbUser.uid}`));
+        if (rtSnap.exists()) {
+          userProfile = { id: fbUser.uid, uid: fbUser.uid, email: fbUser.email, ...rtSnap.val() };
+        }
+      } catch (e) {}
     }
 
     if (!userProfile) {
-      // Fallback profile if none stored
       userProfile = {
         id: fbUser.uid,
         uid: fbUser.uid,
@@ -173,27 +292,24 @@ export const AuthProvider = ({ children }) => {
         status: 'Active'
       };
       try {
-        await setDoc(doc(db, 'users', fbUser.uid), userProfile);
+        if (db) await setDoc(doc(db, 'users', fbUser.uid), userProfile);
+      } catch (e) {}
+      try {
+        if (rtdb) await set(ref(rtdb, `users/${fbUser.uid}`), userProfile);
       } catch (e) {}
     }
 
-    // Role-based verification
+    // Role Guard
     if (requiredRole && userProfile.role !== requiredRole) {
       await signOut(auth);
       throw new Error(`Account role mismatch. This portal is for ${requiredRole}s, but this account is registered as a ${userProfile.role}.`);
-    }
-
-    // Approval gate for researchers
-    if (userProfile.role === 'Agricultural Expert / Researcher' && userProfile.status === 'Pending Approval') {
-      await signOut(auth);
-      throw new Error("Your researcher account is currently pending approval by the Agriculture Department Admin. You will receive access once credentials are verified.");
     }
 
     setCurrentUser(userProfile);
     return userProfile;
   };
 
-  // Register Farmer with Firebase Auth & Firestore
+  // Register Farmer with Firebase Auth & Cloud Sync
   const registerFarmer = async (farmerData) => {
     if (!auth) throw new Error("Firebase Auth is not available.");
 
@@ -221,9 +337,15 @@ export const AuthProvider = ({ children }) => {
     };
 
     try {
-      await setDoc(doc(db, 'users', fbUser.uid), newFarmer);
+      if (db) await setDoc(doc(db, 'users', fbUser.uid), newFarmer);
     } catch (e) {
       console.warn("Firestore farmer write notice:", e);
+    }
+
+    try {
+      if (rtdb) await set(ref(rtdb, `users/${fbUser.uid}`), newFarmer);
+    } catch (e) {
+      console.warn("RTDB farmer write notice:", e);
     }
 
     setCurrentUser(newFarmer);
@@ -233,143 +355,100 @@ export const AuthProvider = ({ children }) => {
     return newFarmer;
   };
 
-  // Register Researcher / Expert with Firebase Auth & Firestore
-  const registerResearcher = async (researcherData) => {
-    if (!auth) throw new Error("Firebase Auth is not available.");
+  // Admin Adds / Provisions a Certified Expert / Researcher
+  const addExpert = async (expertData) => {
+    const cleanEmail = expertData.email.trim();
+    let expertUid = `EXP-${Date.now()}`;
 
-    const userCredential = await createUserWithEmailAndPassword(auth, researcherData.email.trim(), researcherData.password);
-    const fbUser = userCredential.user;
-
-    if (researcherData.fullName) {
+    // Create Firebase Auth user if password provided using secondary app
+    if (auth && expertData.password) {
       try {
-        await updateFirebaseProfile(fbUser, { displayName: researcherData.fullName });
-      } catch (e) {}
+        const { initializeApp } = await import('firebase/app');
+        const { getAuth: getSecondaryAuth, createUserWithEmailAndPassword: createSecondaryUser, signOut: signSecondaryOut } = await import('firebase/auth');
+        const tempApp = initializeApp(firebaseConfig, `TempAuth_${Date.now()}`);
+        const tempAuth = getSecondaryAuth(tempApp);
+        const cred = await createSecondaryUser(tempAuth, cleanEmail, expertData.password);
+        expertUid = cred.user.uid;
+        await signSecondaryOut(tempAuth);
+      } catch (authErr) {
+        console.warn("Could not register in Firebase Auth secondary app:", authErr?.message);
+      }
     }
 
-    const newResearcher = {
-      id: fbUser.uid,
-      uid: fbUser.uid,
+    const newExpert = {
+      id: expertUid,
+      uid: expertUid,
       role: "Agricultural Expert / Researcher",
-      fullName: researcherData.fullName,
-      email: researcherData.email.trim(),
-      mobileNumber: researcherData.mobileNumber || "",
-      department: researcherData.department || "Plant Pathology",
-      specialization: researcherData.specialization || "Crop Diseases",
-      institution: researcherData.institution || "State Agricultural University",
-      employeeId: researcherData.employeeId || `EXP-${Math.floor(1000 + Math.random() * 9000)}`,
-      status: "Pending Approval", // Requires Admin Approval
+      fullName: expertData.fullName,
+      email: cleanEmail,
+      mobileNumber: expertData.mobileNumber || "",
+      department: expertData.department || "Plant Pathology",
+      specialization: expertData.specialization || "Crop Diseases & Diagnostics",
+      institution: expertData.institution || "State Agricultural University",
+      employeeId: expertData.employeeId || `EXP-${Math.floor(1000 + Math.random() * 9000)}`,
+      status: "Approved",
+      verifiedBadge: true,
       casesSolved: 0,
-      verifiedBadge: false,
       createdAt: new Date().toISOString()
     };
 
+    // Save to Firestore
     try {
-      await setDoc(doc(db, 'users', fbUser.uid), newResearcher);
+      if (db) await setDoc(doc(db, 'users', expertUid), newExpert);
     } catch (e) {
-      console.warn("Firestore researcher write notice:", e);
+      console.warn("Firestore addExpert write notice:", e);
     }
 
-    // Sign out immediately until admin approves
-    await signOut(auth);
-    setCurrentUser(null);
-
-    setUsers(prev => [newResearcher, ...prev]);
-    realtimeService.broadcast('RESEARCHER_REGISTERED', newResearcher);
-
-    return newResearcher;
-  };
-
-  // Register / Provision Department Admin
-  const registerAdmin = async (adminData, passkey) => {
-    if (!auth) throw new Error("Firebase Auth is not available.");
-    if (passkey !== "ADMIN2026" && passkey !== "CROPCARE_ADMIN") {
-      throw new Error("Invalid Administrative Passkey. Access denied.");
-    }
-
-    const userCredential = await createUserWithEmailAndPassword(auth, adminData.email.trim(), adminData.password);
-    const fbUser = userCredential.user;
-
-    const newAdmin = {
-      id: fbUser.uid,
-      uid: fbUser.uid,
-      role: "Agriculture Department Admin",
-      fullName: adminData.fullName || "Department Admin Officer",
-      email: adminData.email.trim(),
-      mobileNumber: adminData.mobileNumber || "",
-      department: "State Directorate of Agriculture",
-      status: "Active",
-      createdAt: new Date().toISOString()
-    };
-
+    // Save to Realtime Database
     try {
-      await setDoc(doc(db, 'users', fbUser.uid), newAdmin);
+      if (rtdb) await set(ref(rtdb, `users/${expertUid}`), newExpert);
     } catch (e) {
-      console.warn("Firestore admin write notice:", e);
+      console.warn("RTDB addExpert write notice:", e);
     }
 
-    setCurrentUser(newAdmin);
-    setUsers(prev => [newAdmin, ...prev]);
-    return newAdmin;
-  };
+    setUsers(prev => [newExpert, ...prev.filter(u => u.id !== expertUid)]);
+    realtimeService.broadcast('EXPERT_ADDED', newExpert);
 
-  // Approve Researcher
-  const approveResearcher = async (userId) => {
-    try {
-      await updateDoc(doc(db, 'users', userId), {
-        status: "Approved",
-        verifiedBadge: true
-      });
-    } catch (e) {
-      console.warn("Firestore approve researcher write notice:", e);
-    }
-
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: "Approved", verifiedBadge: true } : u));
-    const target = users.find(u => u.id === userId);
-    realtimeService.broadcast('RESEARCHER_APPROVED', { userId, fullName: target?.fullName });
-  };
-
-  // Reject Researcher
-  const rejectResearcher = async (userId) => {
-    try {
-      await updateDoc(doc(db, 'users', userId), { status: "Rejected" });
-    } catch (e) {
-      console.warn("Firestore reject researcher write notice:", e);
-    }
-
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: "Rejected" } : u));
-    realtimeService.broadcast('RESEARCHER_REJECTED', { userId });
+    return newExpert;
   };
 
   // Update Profile
   const updateProfile = async (updatedData) => {
     if (!currentUser) return;
+    const targetId = currentUser.uid || currentUser.id;
     const updated = { ...currentUser, ...updatedData };
 
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid || currentUser.id), updatedData);
-    } catch (e) {
-      console.warn("Firestore update profile notice:", e);
-    }
+      if (db) await updateDoc(doc(db, 'users', targetId), updatedData);
+    } catch (e) {}
+
+    try {
+      if (rtdb) await set(ref(rtdb, `users/${targetId}`), updated);
+    } catch (e) {}
 
     setCurrentUser(updated);
-    setUsers(prev => prev.map(u => u.id === (currentUser.uid || currentUser.id) ? updated : u));
+    setUsers(prev => prev.map(u => u.id === targetId ? updated : u));
     realtimeService.broadcast('USER_UPDATED', updated);
   };
 
-  // Delete User Account
+  // Delete User Account / Admin Removes Expert
   const deleteAccount = async (userId) => {
     const targetId = userId || currentUser?.id;
     if (!targetId) return;
 
     try {
-      await deleteDoc(doc(db, 'users', targetId));
-    } catch (e) {
-      console.warn("Firestore delete user notice:", e);
-    }
+      if (db) await deleteDoc(doc(db, 'users', targetId));
+    } catch (e) {}
+
+    try {
+      if (rtdb) await remove(ref(rtdb, `users/${targetId}`));
+    } catch (e) {}
 
     setUsers(prev => prev.filter(u => u.id !== targetId));
     if (currentUser?.id === targetId || currentUser?.uid === targetId) {
-      await signOut(auth);
+      if (auth) {
+        try { await signOut(auth); } catch (e) {}
+      }
       setCurrentUser(null);
     }
 
@@ -394,10 +473,7 @@ export const AuthProvider = ({ children }) => {
       login,
       logout,
       registerFarmer,
-      registerResearcher,
-      registerAdmin,
-      approveResearcher,
-      rejectResearcher,
+      addExpert,
       updateProfile,
       deleteAccount,
       isAuthenticated: Boolean(currentUser),

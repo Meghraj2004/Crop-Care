@@ -98,7 +98,7 @@ export const FarmerRegisterPage = () => {
                       required
                       value={formData.email}
                       onChange={e => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="ramesh@farmconnect.org"
+                      placeholder="ramesh@cropcare.gov.in"
                       className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-xs font-medium"
                     />
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />

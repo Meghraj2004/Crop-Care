@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { INITIAL_DEPARTMENTS } from '../data/initialData';
-import { db } from '../services/firebase';
+import { db, rtdb } from '../services/firebase';
 import { 
   collection, 
   doc, 
@@ -9,10 +9,16 @@ import {
   getDocs, 
   updateDoc, 
   deleteDoc, 
-  onSnapshot,
-  query,
-  orderBy 
+  onSnapshot 
 } from 'firebase/firestore';
+import { 
+  ref, 
+  set, 
+  get, 
+  onValue, 
+  update as updateRt, 
+  remove as removeRt 
+} from 'firebase/database';
 import { realtimeService } from '../services/realtime';
 
 const DataContext = createContext(null);
@@ -27,7 +33,7 @@ export const DataProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [savedSolutions, setSavedSolutions] = useState(() => {
     try {
-      const saved = localStorage.getItem('farmconnect_saved_solutions');
+      const saved = localStorage.getItem('cropcare_saved_solutions') || localStorage.getItem('farmconnect_saved_solutions');
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
@@ -46,81 +52,107 @@ export const DataProvider = ({ children }) => {
         'farmconnect_notifications',
         'farmconnect_users'
       ];
-      // Only purge if they contain obsolete dummy test items
-      const cachedIssues = localStorage.getItem('farmconnect_issues');
-      if (cachedIssues && cachedIssues.includes('FC-1024')) {
-        legacyKeys.forEach(k => localStorage.removeItem(k));
-      }
+      legacyKeys.forEach(k => localStorage.removeItem(k));
     } catch (e) {}
   }, []);
 
-  // Save savedSolutions bookmarks
+  // Save Bookmarks
   useEffect(() => {
     try {
-      localStorage.setItem('farmconnect_saved_solutions', JSON.stringify(savedSolutions));
+      localStorage.setItem('cropcare_saved_solutions', JSON.stringify(savedSolutions));
     } catch (e) {}
   }, [savedSolutions]);
 
-  // 1. Live Firestore Real-Time Listeners
+  // 1. Live Firestore + RTDB Dual Listeners
   useEffect(() => {
-    if (!db) return;
+    let unsubIssuesFs = () => {}, unsubUpdatesFs = () => {}, unsubRespFs = () => {};
+    let unsubRcFs = () => {}, unsubKbFs = () => {}, unsubDeptsFs = () => {}, unsubNotifsFs = () => {};
 
-    // Listen to Issues
-    const unsubIssues = onSnapshot(collection(db, 'issues'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setIssues(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (err) => console.info("Firestore issues sync info:", err?.message || err));
+    // Firestore Listeners
+    if (db) {
+      try {
+        unsubIssuesFs = onSnapshot(collection(db, 'issues'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setIssues(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+          }
+        }, () => {});
 
-    // Listen to Issue Timeline Updates
-    const unsubUpdates = onSnapshot(collection(db, 'issue_updates'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setIssueUpdates(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (err) => console.info("Firestore issue updates sync info:", err?.message || err));
+        unsubUpdatesFs = onSnapshot(collection(db, 'issue_updates'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setIssueUpdates(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+          }
+        }, () => {});
 
-    // Listen to Expert Responses
-    const unsubResponses = onSnapshot(collection(db, 'expert_responses'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setExpertResponses(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (err) => console.info("Firestore expert responses sync info:", err?.message || err));
+        unsubRespFs = onSnapshot(collection(db, 'expert_responses'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setExpertResponses(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+          }
+        }, () => {});
 
-    // Listen to Research Cases
-    const unsubResearch = onSnapshot(collection(db, 'research_cases'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setResearchCases(list.sort((a, b) => new Date(b.lastUpdated || b.startDate || 0) - new Date(a.lastUpdated || a.startDate || 0)));
-    }, (err) => console.info("Firestore research cases sync info:", err?.message || err));
+        unsubRcFs = onSnapshot(collection(db, 'research_cases'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setResearchCases(list.sort((a, b) => new Date(b.lastUpdated || b.startDate || 0) - new Date(a.lastUpdated || a.startDate || 0)));
+          }
+        }, () => {});
 
-    // Listen to Knowledge Articles
-    const unsubKb = onSnapshot(collection(db, 'knowledge_articles'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setKnowledgeArticles(list);
-    }, (err) => console.info("Firestore knowledge articles sync info:", err?.message || err));
+        unsubKbFs = onSnapshot(collection(db, 'knowledge_articles'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setKnowledgeArticles(list);
+          }
+        }, () => {});
 
-    // Listen to Departments
-    const unsubDepts = onSnapshot(collection(db, 'departments'), (snap) => {
-      if (!snap.empty) {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setDepartments(list);
-      }
-    }, (err) => console.info("Firestore departments sync info:", err?.message || err));
+        unsubDeptsFs = onSnapshot(collection(db, 'departments'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setDepartments(list);
+          }
+        }, () => {});
 
-    // Listen to Notifications
-    const unsubNotifs = onSnapshot(collection(db, 'notifications'), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setNotifications(list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)));
-    }, (err) => console.info("Firestore notifications sync info:", err?.message || err));
+        unsubNotifsFs = onSnapshot(collection(db, 'notifications'), (snap) => {
+          if (!snap.empty) {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setNotifications(list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)));
+          }
+        }, () => {});
+      } catch (e) {}
+    }
+
+    // RTDB Fallback / Parallel Sync
+    let unsubRtIssues = () => {};
+    if (rtdb) {
+      try {
+        unsubRtIssues = onValue(ref(rtdb, 'issues'), (snap) => {
+          if (snap.exists()) {
+            const val = snap.val();
+            const list = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+            setIssues(prev => {
+              const map = new Map(prev.map(i => [i.id, i]));
+              list.forEach(i => map.set(i.id, i));
+              return Array.from(map.values()).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            });
+          }
+        }, () => {});
+      } catch (e) {}
+    }
 
     return () => {
-      unsubIssues();
-      unsubUpdates();
-      unsubResponses();
-      unsubResearch();
-      unsubKb();
-      unsubDepts();
-      unsubNotifs();
+      unsubIssuesFs();
+      unsubUpdatesFs();
+      unsubRespFs();
+      unsubRcFs();
+      unsubKbFs();
+      unsubDeptsFs();
+      unsubNotifsFs();
+      unsubRtIssues();
     };
   }, []);
 
-  // 2. Real-Time BroadcastChannel Event Listener (Local cross-tab instant responsiveness)
+  // 2. Real-Time BroadcastChannel Event Listener
   useEffect(() => {
     const unsubscribeBus = realtimeService.subscribe((payload) => {
       const { type, data } = payload;
@@ -138,17 +170,20 @@ export const DataProvider = ({ children }) => {
           break;
         case 'EXPERT_DIAGNOSED':
           setExpertResponses(prev => prev.some(r => r.id === data.id) ? prev : [data, ...prev]);
-          setIssues(prev => prev.map(i => i.id === data.issueId ? { ...i, status: data.isResolved ? 'Resolved' : 'Expert Responded' } : i));
-          break;
-        case 'KB_PUBLISHED':
-          setKnowledgeArticles(prev => prev.some(k => k.id === data.id) ? prev : [data, ...prev]);
+          setIssues(prev => prev.map(i => i.id === data.issueId ? { ...i, status: data.isResolved ? 'Resolved' : 'Expert Responded', assignedExpertName: data.expertName } : i));
           break;
         case 'RESEARCH_ESCALATED':
-          setResearchCases(prev => prev.some(r => r.id === data.id) ? prev : [data, ...prev]);
-          setIssues(prev => prev.map(i => i.id === data.issueId ? { ...i, status: 'Research Required' } : i));
+          setResearchCases(prev => [data, ...prev]);
+          setIssues(prev => prev.map(i => i.id === data.issueId ? { ...i, status: "Research Required" } : i));
+          break;
+        case 'RESEARCH_UPDATED':
+          setResearchCases(prev => prev.map(rc => rc.id === data.rcId ? { ...rc, ...data.updatedFields } : rc));
+          break;
+        case 'KB_PUBLISHED':
+          setKnowledgeArticles(prev => [data, ...prev]);
           break;
         case 'DEPARTMENT_ADDED':
-          setDepartments(prev => prev.some(d => d.id === data.id) ? prev : [...prev, data]);
+          setDepartments(prev => [...prev, data]);
           break;
         case 'DEPARTMENT_DELETED':
           setDepartments(prev => prev.filter(d => d.id !== data.id));
@@ -161,22 +196,18 @@ export const DataProvider = ({ children }) => {
     return () => unsubscribeBus();
   }, []);
 
-  // Report Problem (Stored in Firestore)
+  // Add / Report New Problem
   const addIssue = async (newIssueData, user) => {
-    const issueNumber = 1000 + issues.length + 1;
-    const newIssueId = `FC-${issueNumber}`;
-
-    const dept = departments.find(d => d.id === newIssueData.departmentId) || departments[0];
+    const newIssueId = `ISSUE-${Date.now()}`;
+    const dept = departments.find(d => d.name === newIssueData.department) || departments[0];
 
     const issueObj = {
       id: newIssueId,
       farmerId: user.uid || user.id,
       farmerName: user.fullName || "Farmer",
-      farmerMobile: user.mobileNumber || "N/A",
+      farmerMobile: user.mobileNumber || "Not provided",
       title: newIssueData.title,
       cropName: newIssueData.cropName,
-      cropCategory: newIssueData.cropCategory || "General",
-      cropVariety: newIssueData.cropVariety || "Standard",
       growthStage: newIssueData.growthStage || "Not specified",
       firstNoticedDate: newIssueData.firstNoticedDate || new Date().toISOString().split('T')[0],
       category: newIssueData.category,
@@ -220,11 +251,24 @@ export const DataProvider = ({ children }) => {
 
     // Save to Firestore
     try {
-      await setDoc(doc(db, 'issues', newIssueId), issueObj);
-      await setDoc(doc(db, 'issue_updates', firstUpdate.id), firstUpdate);
-      await setDoc(doc(db, 'notifications', notif.id), notif);
+      if (db) {
+        await setDoc(doc(db, 'issues', newIssueId), issueObj);
+        await setDoc(doc(db, 'issue_updates', firstUpdate.id), firstUpdate);
+        await setDoc(doc(db, 'notifications', notif.id), notif);
+      }
     } catch (err) {
-      console.warn("Firestore addIssue write notice:", err);
+      console.warn("Firestore addIssue notice (rule check):", err);
+    }
+
+    // Save to Realtime Database
+    try {
+      if (rtdb) {
+        await set(ref(rtdb, `issues/${newIssueId}`), issueObj);
+        await set(ref(rtdb, `issue_updates/${firstUpdate.id}`), firstUpdate);
+        await set(ref(rtdb, `notifications/${notif.id}`), notif);
+      }
+    } catch (rtdbErr) {
+      console.warn("RTDB addIssue notice:", rtdbErr);
     }
 
     setIssues(prev => [issueObj, ...prev]);
@@ -256,14 +300,24 @@ export const DataProvider = ({ children }) => {
     const nextStatus = updateData.condition === "Resolved" ? "Resolved" : "Farmer Updating";
 
     try {
-      await setDoc(doc(db, 'issue_updates', updateObj.id), updateObj);
-      await updateDoc(doc(db, 'issues', issueId), {
-        status: nextStatus,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      console.warn("Firestore addIssueUpdate write notice:", err);
-    }
+      if (db) {
+        await setDoc(doc(db, 'issue_updates', updateObj.id), updateObj);
+        await updateDoc(doc(db, 'issues', issueId), {
+          status: nextStatus,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {}
+
+    try {
+      if (rtdb) {
+        await set(ref(rtdb, `issue_updates/${updateObj.id}`), updateObj);
+        await updateRt(ref(rtdb, `issues/${issueId}`), {
+          status: nextStatus,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {}
 
     setIssueUpdates(prev => [updateObj, ...prev]);
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: nextStatus, updatedAt: new Date().toISOString() } : i));
@@ -296,16 +350,28 @@ export const DataProvider = ({ children }) => {
     const nextStatus = responseObj.isResolved ? "Resolved" : "Expert Responded";
 
     try {
-      await setDoc(doc(db, 'expert_responses', newResponse.id), newResponse);
-      await updateDoc(doc(db, 'issues', responseObj.issueId), {
-        status: nextStatus,
-        assignedExpertId: expert.uid || expert.id,
-        assignedExpertName: expert.fullName,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      console.warn("Firestore addExpertResponse write notice:", err);
-    }
+      if (db) {
+        await setDoc(doc(db, 'expert_responses', newResponse.id), newResponse);
+        await updateDoc(doc(db, 'issues', responseObj.issueId), {
+          status: nextStatus,
+          assignedExpertId: expert.uid || expert.id,
+          assignedExpertName: expert.fullName,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {}
+
+    try {
+      if (rtdb) {
+        await set(ref(rtdb, `expert_responses/${newResponse.id}`), newResponse);
+        await updateRt(ref(rtdb, `issues/${responseObj.issueId}`), {
+          status: nextStatus,
+          assignedExpertId: expert.uid || expert.id,
+          assignedExpertName: expert.fullName,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {}
 
     setExpertResponses(prev => [newResponse, ...prev]);
     setIssues(prev => prev.map(i => i.id === responseObj.issueId ? {
@@ -339,7 +405,10 @@ export const DataProvider = ({ children }) => {
       };
 
       try {
-        await setDoc(doc(db, 'knowledge_articles', newKbArticle.id), newKbArticle);
+        if (db) await setDoc(doc(db, 'knowledge_articles', newKbArticle.id), newKbArticle);
+      } catch (e) {}
+      try {
+        if (rtdb) await set(ref(rtdb, `knowledge_articles/${newKbArticle.id}`), newKbArticle);
       } catch (e) {}
 
       setKnowledgeArticles(prev => [newKbArticle, ...prev]);
@@ -374,14 +443,24 @@ export const DataProvider = ({ children }) => {
     };
 
     try {
-      await setDoc(doc(db, 'research_cases', newRcId), newRc);
-      await updateDoc(doc(db, 'issues', issueId), {
-        status: "Research Required",
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      console.warn("Firestore convertToResearchCase notice:", err);
-    }
+      if (db) {
+        await setDoc(doc(db, 'research_cases', newRcId), newRc);
+        await updateDoc(doc(db, 'issues', issueId), {
+          status: "Research Required",
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (err) {}
+
+    try {
+      if (rtdb) {
+        await set(ref(rtdb, `research_cases/${newRcId}`), newRc);
+        await updateRt(ref(rtdb, `issues/${issueId}`), {
+          status: "Research Required",
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {}
 
     setResearchCases(prev => [newRc, ...prev]);
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: "Research Required", updatedAt: new Date().toISOString() } : i));
@@ -393,13 +472,22 @@ export const DataProvider = ({ children }) => {
   // Update Research Case
   const updateResearchCase = async (rcId, updatedFields) => {
     try {
-      await updateDoc(doc(db, 'research_cases', rcId), {
-        ...updatedFields,
-        lastUpdated: new Date().toISOString().split('T')[0]
-      });
-    } catch (err) {
-      console.warn("Firestore updateResearchCase notice:", err);
-    }
+      if (db) {
+        await updateDoc(doc(db, 'research_cases', rcId), {
+          ...updatedFields,
+          lastUpdated: new Date().toISOString().split('T')[0]
+        });
+      }
+    } catch (err) {}
+
+    try {
+      if (rtdb) {
+        await updateRt(ref(rtdb, `research_cases/${rcId}`), {
+          ...updatedFields,
+          lastUpdated: new Date().toISOString().split('T')[0]
+        });
+      }
+    } catch (e) {}
 
     setResearchCases(prev => prev.map(rc => rc.id === rcId ? {
       ...rc,
@@ -419,10 +507,21 @@ export const DataProvider = ({ children }) => {
     const newNo = !isHelpful ? target.helpfulNo + 1 : target.helpfulNo;
 
     try {
-      await updateDoc(doc(db, 'knowledge_articles', articleId), {
-        helpfulYes: newYes,
-        helpfulNo: newNo
-      });
+      if (db) {
+        await updateDoc(doc(db, 'knowledge_articles', articleId), {
+          helpfulYes: newYes,
+          helpfulNo: newNo
+        });
+      }
+    } catch (e) {}
+
+    try {
+      if (rtdb) {
+        await updateRt(ref(rtdb, `knowledge_articles/${articleId}`), {
+          helpfulYes: newYes,
+          helpfulNo: newNo
+        });
+      }
     } catch (e) {}
 
     setKnowledgeArticles(prev => prev.map(a => a.id === articleId ? { ...a, helpfulYes: newYes, helpfulNo: newNo } : a));
@@ -440,10 +539,12 @@ export const DataProvider = ({ children }) => {
     };
 
     try {
-      await setDoc(doc(db, 'departments', newDept.id), newDept);
-    } catch (err) {
-      console.warn("Firestore addDepartment write notice:", err);
-    }
+      if (db) await setDoc(doc(db, 'departments', newDept.id), newDept);
+    } catch (err) {}
+
+    try {
+      if (rtdb) await set(ref(rtdb, `departments/${newDept.id}`), newDept);
+    } catch (e) {}
 
     setDepartments(prev => [...prev, newDept]);
     realtimeService.broadcast('DEPARTMENT_ADDED', newDept);
@@ -453,10 +554,12 @@ export const DataProvider = ({ children }) => {
   // Delete Department Division
   const deleteDepartment = async (deptId) => {
     try {
-      await deleteDoc(doc(db, 'departments', deptId));
-    } catch (err) {
-      console.warn("Firestore deleteDepartment notice:", err);
-    }
+      if (db) await deleteDoc(doc(db, 'departments', deptId));
+    } catch (err) {}
+
+    try {
+      if (rtdb) await removeRt(ref(rtdb, `departments/${deptId}`));
+    } catch (e) {}
 
     setDepartments(prev => prev.filter(d => d.id !== deptId));
     realtimeService.broadcast('DEPARTMENT_DELETED', { id: deptId });
@@ -470,8 +573,13 @@ export const DataProvider = ({ children }) => {
   // Mark Notification Read
   const markNotificationRead = async (notifId) => {
     try {
-      await updateDoc(doc(db, 'notifications', notifId), { read: true });
+      if (db) await updateDoc(doc(db, 'notifications', notifId), { read: true });
     } catch (e) {}
+
+    try {
+      if (rtdb) await updateRt(ref(rtdb, `notifications/${notifId}`), { read: true });
+    } catch (e) {}
+
     setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
   };
 

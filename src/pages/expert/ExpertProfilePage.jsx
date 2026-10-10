@@ -132,7 +132,7 @@ export const ExpertProfilePage = () => {
           </div>
           <div>
             <h2 className="text-base font-black text-red-900">Danger Zone: Delete Expert Account</h2>
-            <p className="text-xs text-red-700">Permanently remove your expert credentials from FarmConnect</p>
+            <p className="text-xs text-red-700">Permanently remove your expert credentials from CropCare</p>
           </div>
         </div>
 

@@ -1,10 +1,10 @@
-// Comprehensive Translations Dictionary for FarmConnect CropCare
+// Comprehensive Translations Dictionary for CropCare
 // Supports: English, Marathi (मराठी), and Hindi (हिंदी)
 
 export const TRANSLATIONS = {
   English: {
     // Branding & Navigation
-    appName: "FarmConnect",
+    appName: "CropCare",
     subName: "CropCare",
     platformSubtitle: "Support & Research Platform",
     tagline: "Connecting Farmers with Agricultural Experts",
@@ -52,7 +52,7 @@ export const TRANSLATIONS = {
     fiveSimpleSteps: "5 Simple Steps",
 
     // How It Works
-    howItWorksTitle: "How FarmConnect Works",
+    howItWorksTitle: "How CropCare Works",
     howItWorksSubtitle: "From reporting your crop problem to tracking recovery and helping fellow farmers across the state.",
     step1Title: "Report Problem",
     step1Desc: "Upload a crop photo and describe the symptoms.",
@@ -268,9 +268,9 @@ export const TRANSLATIONS = {
     removeSaved: "Remove",
 
     // About Page
-    aboutPlatformTitle: "About FarmConnect Platform",
+    aboutPlatformTitle: "About CropCare Platform",
     aboutMainHeading: "Empowering Farmers with Agricultural Science & Guidance",
-    aboutMainDesc: "FarmConnect (CropCare) is a digital agricultural support and research ecosystem created to bridge the gap between farmers in rural villages and agricultural scientists, plant pathologists, and government extension officers.",
+    aboutMainDesc: "CropCare is a digital agricultural support and research ecosystem created to bridge the gap between farmers in rural villages and agricultural scientists, plant pathologists, and government extension officers.",
     objective1Title: "Farmer-First Simplicity",
     objective1Desc: "Designed for mobile usage with large buttons, minimal forms, multi-image upload, and regional language support (English, Marathi, Hindi).",
     objective2Title: "Verified Expert Solutions",
@@ -296,7 +296,7 @@ export const TRANSLATIONS = {
     messageSentSuccess: "Thank you! Your message has been sent to the agriculture support desk.",
 
     // Auth Pages (Login & Register)
-    loginTitle: "Login to FarmConnect",
+    loginTitle: "Login to CropCare",
     loginSubtitle: "Access your farmer dashboard, submit crop reports, or review expert cases",
     instantDemoLogin: "⚡ Instant Demo Login (Click to Test):",
     emailOrMobileLabel: "Email Address",
@@ -329,8 +329,8 @@ export const TRANSLATIONS = {
     faq1Q: "How fast will an expert reply to my crop problem?",
     faq1A: "Most cases receive a response within 12 to 24 hours. Critical pest or disease outbreaks are prioritized.",
     faq2Q: "Is this platform completely free for farmers?",
-    faq2A: "Yes, FarmConnect is 100% free under state agricultural digital extension initiatives.",
-    faq3Q: "Can I use FarmConnect without an internet connection?",
+    faq2A: "Yes, CropCare is 100% free under state agricultural digital extension initiatives.",
+    faq3Q: "Can I use CropCare without an internet connection?",
     faq3A: "You can view saved solutions offline. Submitting a new case requires a mobile data or Wi-Fi connection.",
 
     // Footer
@@ -339,7 +339,7 @@ export const TRANSLATIONS = {
     quickNavigation: "Quick Navigation",
     cropProblemDepartments: "Crop Problem Departments",
     kisanSupportHelpline: "Kisan Support Helpline",
-    copyrightText: "FarmConnect CropCare Platform. Developed for Farmer Support & Agricultural Research.",
+    copyrightText: "CropCare Platform. Developed for Farmer Support & Agricultural Research.",
     privacyPolicy: "Privacy Policy",
     termsOfService: "Terms of Service",
     accessibility: "WCAG 2.1 Accessibility"
@@ -347,7 +347,7 @@ export const TRANSLATIONS = {
 
   Marathi: {
     // Branding & Navigation
-    appName: "फार्मकनेक्ट",
+    appName: "क्रॉपकेअर",
     subName: "क्रॉपकेअर",
     platformSubtitle: "शेतकरी सहाय्य व संशोधन व्यासपीठ",
     tagline: "शेतकऱ्यांना कृषी तज्ज्ञांशी जोडणारे व्यासपीठ",
@@ -395,7 +395,7 @@ export const TRANSLATIONS = {
     fiveSimpleSteps: "५ सोप्या पायऱ्या",
 
     // How It Works
-    howItWorksTitle: "फार्मकनेक्ट कसे कार्य करते",
+    howItWorksTitle: "क्रॉपकेअर कसे कार्य करते",
     howItWorksSubtitle: "पिकांची समस्या नोंदवण्यापासून ते पिक पूर्ववत होईपर्यंत तज्ज्ञांचे मार्गदर्शन आणि इतर शेतकऱ्यांना मदत.",
     step1Title: "समस्या नोंदवा",
     step1Desc: "पिकाचा फोटो अपलोड करा आणि लक्षणे सांगा.",
@@ -611,9 +611,9 @@ export const TRANSLATIONS = {
     removeSaved: "काढून टाका",
 
     // About Page
-    aboutPlatformTitle: "फार्मकनेक्ट व्यासपीठाविषयी",
+    aboutPlatformTitle: "क्रॉपकेअर व्यासपीठाविषयी",
     aboutMainHeading: "कृषी विज्ञान आणि तज्ज्ञ मार्गदर्शनाने शेतकऱ्यांचे सबलीकरण",
-    aboutMainDesc: "फार्मकनेक्ट (क्रॉपकेअर) हे गावातील शेतकरी आणि कृषी विद्यापीठातील शास्त्रज्ञ, वनस्पती रोगतज्ज्ञ व कृषी अधिकारी यांच्यातील अंतर कमी करण्यासाठी तयार केलेले डिजिटल व्यासपीठ आहे.",
+    aboutMainDesc: "क्रॉपकेअर हे गावातील शेतकरी आणि कृषी विद्यापीठातील शास्त्रज्ञ, वनस्पती रोगतज्ज्ञ व कृषी अधिकारी यांच्यातील अंतर कमी करण्यासाठी तयार केलेले डिजिटल व्यासपीठ आहे.",
     objective1Title: "शेतकरी-सुलभ रचना",
     objective1Desc: "मोठी बटणे, सोपे फॉर्म, एकाधिक फोटो अपलोड आणि प्रादेशिक भाषा (मराठी, हिंदी, इंग्रजी) पाठिंब्यासह मोबाईलवर वापरण्यास सुलभ.",
     objective2Title: "सत्यापित तज्ज्ञ उपाय",
@@ -639,7 +639,7 @@ export const TRANSLATIONS = {
     messageSentSuccess: "धन्यवाद! तुमचा संदेश कृषी सहाय्य कक्षाकडे पाठवला गेला आहे.",
 
     // Auth Pages (Login & Register)
-    loginTitle: "फार्मकनेक्ट मध्ये लॉगिन करा",
+    loginTitle: "क्रॉपकेअर मध्ये लॉगिन करा",
     loginSubtitle: "तुमचा डॅशबोर्ड उघडा, पिक समस्या नोंदवा किंवा तज्ज्ञांचे सल्ले पहा",
     instantDemoLogin: "⚡ झटपट डेमो लॉगिन (चाचणीसाठी क्लिक करा):",
     emailOrMobileLabel: "ईमेल पत्ता",
@@ -672,7 +672,7 @@ export const TRANSLATIONS = {
     faq1Q: "तज्ज्ञांकडून किती वेळात उत्तर मिळेल?",
     faq1A: "बहुतांश केसेसमध्ये १२ ते २४ तासांत उत्तर मिळते. गंभीर कीड व रोगांना प्राधान्य दिले जाते.",
     faq2Q: "हे व्यासपीठ शेतकऱ्यांसाठी पूर्णपणे मोफत आहे का?",
-    faq2A: "होय, फार्मकनेक्ट शासनाच्या कृषी डिजिटल उपक्रमांतर्गत शेतकऱ्यांसाठी १००% मोफत आहे.",
+    faq2A: "होय, क्रॉपकेअर शासनाच्या कृषी डिजिटल उपक्रमांतर्गत शेतकऱ्यांसाठी १००% मोफत आहे.",
     faq3Q: "इंटरनेट नसताना हे वापरता येईल का?",
     faq3A: "जतन केलेले उपाय ऑफलाइन पाहता येतात. नवीन समस्या पाठवण्यासाठी इंटरनेट आवश्यक आहे.",
 
@@ -682,7 +682,7 @@ export const TRANSLATIONS = {
     quickNavigation: "जलद दुवे",
     cropProblemDepartments: "पिक समस्या विभाग",
     kisanSupportHelpline: "किसान सहाय्यता हेल्पलाईन",
-    copyrightText: "फार्मकनेक्ट क्रॉपकेअर प्लॅटफॉर्म. शेतकरी सहाय्य आणि कृषी संशोधनासाठी विकसित.",
+    copyrightText: "क्रॉपकेअर प्लॅटफॉर्म. शेतकरी सहाय्य आणि कृषी संशोधनासाठी विकसित.",
     privacyPolicy: "गोपनीयता धोरण",
     termsOfService: "वापराच्या अटी",
     accessibility: "WCAG 2.1 सुलभता"
@@ -690,7 +690,7 @@ export const TRANSLATIONS = {
 
   Hindi: {
     // Branding & Navigation
-    appName: "फार्मकनेक्ट",
+    appName: "क्रॉपकेयर",
     subName: "क्रॉपकेयर",
     platformSubtitle: "किसान सहायता एवं अनुसंधान मंच",
     tagline: "किसानों को कृषि विशेषज्ञों से जोड़ने वाला मंच",
@@ -738,7 +738,7 @@ export const TRANSLATIONS = {
     fiveSimpleSteps: "5 आसान चरण",
 
     // How It Works
-    howItWorksTitle: "फार्मकनेक्ट कैसे काम करता है",
+    howItWorksTitle: "क्रॉपकेयर कैसे काम करता है",
     howItWorksSubtitle: "फसल समस्या दर्ज करने से लेकर सुधार की निगरानी और राज्य भर के साथी किसानों की मदद करने तक।",
     step1Title: "समस्या दर्ज करें",
     step1Desc: "फसल का फोटो अपलोड करें और लक्षण बताएं।",
@@ -954,9 +954,9 @@ export const TRANSLATIONS = {
     removeSaved: "हटाएं",
 
     // About Page
-    aboutPlatformTitle: "फार्मकनेक्ट मंच के बारे में",
+    aboutPlatformTitle: "क्रॉपकेयर मंच के बारे में",
     aboutMainHeading: "कृषि विज्ञान और विशेषज्ञ मार्गदर्शन से किसानों का सशक्तिकरण",
-    aboutMainDesc: "फार्मकनेक्ट (क्रॉपकेयर) एक डिजिटल कृषि सहायता और अनुसंधान मंच है, जिसे ग्रामीण किसानों और कृषि वैज्ञानिकों व अधिकारियों के बीच की दूरी कम करने के लिए बनाया गया है।",
+    aboutMainDesc: "क्रॉपकेयर एक डिजिटल कृषि सहायता और अनुसंधान मंच है, जिसे ग्रामीण किसानों और कृषि वैज्ञानिकों व अधिकारियों के बीच की दूरी कम करने के लिए बनाया गया है।",
     objective1Title: "किसान-हितैषी सरलता",
     objective1Desc: "बड़े बटन, सरल फॉर्म, मल्टी-फोटो अपलोड और क्षेत्रीय भाषाओं (हिंदी, मराठी, अंग्रेजी) के साथ मोबाइल उपयोग के लिए अनुकूलित।",
     objective2Title: "सत्यापित विशेषज्ञ समाधान",
@@ -982,7 +982,7 @@ export const TRANSLATIONS = {
     messageSentSuccess: "धन्यवाद! आपका संदेश कृषि सहायता डेस्क को भेज दिया गया है।",
 
     // Auth Pages (Login & Register)
-    loginTitle: "फार्मकनेक्ट में लॉगिन करें",
+    loginTitle: "क्रॉपकेयर में लॉगिन करें",
     loginSubtitle: "अपना डैशबोर्ड खोलें, फसल समस्याएं दर्ज करें या विशेषज्ञ सलाह देखें",
     instantDemoLogin: "⚡ त्वरित डेमो लॉगिन (परीक्षण के लिए क्लिक करें):",
     emailOrMobileLabel: "ईमेल पता",
@@ -1015,7 +1015,7 @@ export const TRANSLATIONS = {
     faq1Q: "विशेषज्ञों से कितनी देर में जवाब मिलेगा?",
     faq1A: "अधिकांश मामलों में 12 से 24 घंटों के भीतर जवाब मिल जाता है। गंभीर कीट और रोगों को प्राथमिकता दी जाती है।",
     faq2Q: "क्या यह मंच किसानों के लिए पूरी तरह से मुफ्त है?",
-    faq2A: "हाँ, फार्मकनेक्ट सरकारी कृषि डिजिटल पहल के तहत किसानों के लिए 100% मुफ्त है।",
+    faq2A: "हाँ, क्रॉपकेयर सरकारी कृषि डिजिटल पहल के तहत किसानों के लिए 100% मुफ्त है।",
     faq3Q: "क्या इंटरनेट के बिना भी इसका उपयोग किया जा सकता है?",
     faq3A: "सहेजे गए समाधान बिना इंटरनेट के देखे जा सकते हैं। नया मामला दर्ज करने के लिए इंटरनेट आवश्यक है।",
 
@@ -1025,7 +1025,7 @@ export const TRANSLATIONS = {
     quickNavigation: "त्वरित नेविगेशन",
     cropProblemDepartments: "फसल समस्या विभाग",
     kisanSupportHelpline: "किसान सहायता हेल्पलाइन",
-    copyrightText: "फार्मकनेक्ट क्रॉपकेयर प्लेटफॉर्म। किसान सहायता और कृषि अनुसंधान के लिए विकसित।",
+    copyrightText: "क्रॉपकेयर प्लेटफॉर्म। किसान सहायता और कृषि अनुसंधान के लिए विकसित।",
     privacyPolicy: "गोपनीयता नीति",
     termsOfService: "सेवा की शर्तें",
     accessibility: "WCAG 2.1 सुलभता"

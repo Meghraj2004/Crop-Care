@@ -31,7 +31,7 @@ export const ForgotPasswordPage = () => {
                 <CheckCircle2 className="w-7 h-7" />
               </div>
               <h3 className="text-lg font-bold text-slate-900">Reset Link Sent</h3>
-              <p className="text-xs text-slate-600">Check <strong>{email}</strong> for instructions to reset your FarmConnect password.</p>
+              <p className="text-xs text-slate-600">Check <strong>{email}</strong> for instructions to reset your CropCare password.</p>
               <Link to="/login" className="inline-block pt-2 text-xs font-bold text-emerald-700 hover:underline">
                 Back to Login
               </Link>
@@ -46,7 +46,7 @@ export const ForgotPasswordPage = () => {
                     required
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="ramesh@farmconnect.org"
+                    placeholder="ramesh@cropcare.gov.in"
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-xs font-medium"
                   />
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />

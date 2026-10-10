@@ -101,7 +101,7 @@ export const Navbar = () => {
             </div>
             <div>
               <span className="text-xl font-black tracking-tight text-emerald-950 block leading-tight">
-                FarmConnect <span className="text-emerald-600 font-bold text-sm">CropCare</span>
+                CropCare <span className="text-emerald-600 font-bold text-sm">Advisory</span>
               </span>
               <span className="text-[10px] text-slate-500 font-medium block uppercase tracking-wider">
                 Support & Research Platform
