@@ -1,14 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Phone, Building, Award, ShieldCheck, CheckCircle2, Trash2, AlertTriangle, X } from 'lucide-react';
+import { User, Mail, Phone, Building, Award, ShieldCheck, CheckCircle2, Trash2, AlertTriangle, X, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { compressImageToBase64 } from '../../utils/imageCompressor';
 
 export const ExpertProfilePage = () => {
-  const { currentUser, deleteAccount } = useAuth();
+  const { currentUser, updateProfile, deleteAccount } = useAuth();
   const navigate = useNavigate();
+  const [compressingAvatar, setCompressingAvatar] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [deleteError, setDeleteError] = useState('');
+
+  const handleAvatarSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCompressingAvatar(true);
+    try {
+      const res = await compressImageToBase64(file, { maxWidth: 400, maxHeight: 400, quality: 0.75 });
+      updateProfile({ avatar: res.dataUrl });
+    } catch (err) {
+      console.error("Avatar compression error:", err);
+    } finally {
+      setCompressingAvatar(false);
+      e.target.value = '';
+    }
+  };
 
   const handleDeleteAccount = () => {
     if (confirmText !== 'DELETE') {
@@ -28,8 +45,29 @@ export const ExpertProfilePage = () => {
 
       <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
-          <div className="w-16 h-16 rounded-2xl bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow">
-            {currentUser?.fullName?.charAt(0) || "D"}
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow">
+              {currentUser?.avatar ? (
+                <img src={currentUser.avatar} alt="Expert Profile" className="w-full h-full object-cover" />
+              ) : (
+                currentUser?.fullName?.charAt(0) || "D"
+              )}
+            </div>
+            <input 
+              type="file" 
+              id="expert-avatar-input" 
+              accept="image/jpeg,image/jpg,image/png,image/webp" 
+              className="hidden" 
+              onChange={handleAvatarSelect}
+              disabled={compressingAvatar}
+            />
+            <label 
+              htmlFor="expert-avatar-input"
+              className="absolute -bottom-1 -right-1 p-1 bg-teal-700 hover:bg-teal-800 text-white rounded-full shadow cursor-pointer transition-colors"
+              title="Upload photo"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </label>
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -41,7 +79,12 @@ export const ExpertProfilePage = () => {
               )}
             </div>
             <p className="text-xs text-slate-500 font-semibold">{currentUser?.specialization || "Fungal & Bacterial Crop Diseases"}</p>
-            <p className="text-[11px] text-teal-700 font-bold mt-0.5">ID: {currentUser?.employeeId || "EXP-8842"}</p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <span className="text-[11px] text-teal-700 font-bold">ID: {currentUser?.employeeId || "EXP-8842"}</span>
+              <label htmlFor="expert-avatar-input" className="text-[11px] text-teal-700 font-bold hover:underline cursor-pointer inline-flex items-center gap-1">
+                <Camera className="w-3 h-3" /> {compressingAvatar ? 'Compressing...' : 'Change Photo (Base64)'}
+              </label>
+            </div>
           </div>
         </div>
 

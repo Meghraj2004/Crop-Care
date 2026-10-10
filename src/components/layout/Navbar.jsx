@@ -309,8 +309,12 @@ export const Navbar = () => {
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                   className={`flex items-center gap-2 p-1.5 rounded-xl border transition-colors ${isFarmer ? 'border-emerald-300 bg-emerald-50/50' : isExpert ? 'border-teal-300 bg-teal-50/50' : 'border-purple-300 bg-purple-50/50'}`}
                 >
-                  <div className={`w-8 h-8 rounded-lg font-extrabold flex items-center justify-center text-xs text-white shadow-sm ${isFarmer ? 'bg-emerald-600' : isExpert ? 'bg-teal-600' : 'bg-purple-600'}`}>
-                    {currentUser.fullName.charAt(0)}
+                  <div className={`w-8 h-8 rounded-lg font-extrabold flex items-center justify-center text-xs text-white shadow-sm overflow-hidden ${isFarmer ? 'bg-emerald-600' : isExpert ? 'bg-teal-600' : 'bg-purple-600'}`}>
+                    {currentUser.avatar ? (
+                      <img src={currentUser.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      currentUser.fullName.charAt(0)
+                    )}
                   </div>
                   <div className="text-left hidden md:block pr-1">
                     <span className="text-xs font-bold text-slate-900 block truncate max-w-[120px]">{currentUser.fullName}</span>

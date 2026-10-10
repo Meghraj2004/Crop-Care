@@ -1,60 +1,71 @@
 import React, { useState } from 'react';
-import { Camera, Upload, X, CheckCircle, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { Camera, Upload, X, CheckCircle, Image as ImageIcon, AlertTriangle, Sparkles, Zap } from 'lucide-react';
 import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallback';
+import { compressMultipleImages } from '../../utils/imageCompressor';
 
 export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) => {
   const [compressing, setCompressing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+  const [compressionStats, setCompressionStats] = useState(null);
 
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files);
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
     setErrorMsg("");
     if (images.length + files.length > maxImages) {
       setErrorMsg(`You can upload a maximum of ${maxImages} crop photos.`);
+      e.target.value = '';
       return;
     }
 
     // Validate formats
     const invalidFormat = files.find(f => !['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(f.type));
     if (invalidFormat) {
-      setErrorMsg("Only JPG, JPEG, and PNG images are allowed.");
+      setErrorMsg("Only JPG, JPEG, PNG, and WebP images are allowed.");
+      e.target.value = '';
       return;
     }
 
     setCompressing(true);
-    setProgress(20);
+    setProgress(10);
+    setCompressionStats(null);
 
-    // Simulate image optimization & base64 conversion
-    const readPromises = files.map((file) => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          resolve(event.target.result);
-        };
-        reader.readAsDataURL(file);
+    try {
+      // Compress and convert to Base64 client-side
+      const compressedResults = await compressMultipleImages(
+        files,
+        { maxWidth: 1000, maxHeight: 1000, quality: 0.72 },
+        (pct) => setProgress(Math.min(95, Math.max(10, pct)))
+      );
+
+      const newBase64Images = compressedResults.map(r => r.dataUrl);
+      const totalOriginalKb = compressedResults.reduce((acc, curr) => acc + curr.originalSizeKb, 0);
+      const totalCompressedKb = compressedResults.reduce((acc, curr) => acc + curr.compressedSizeKb, 0);
+      const savingsPct = totalOriginalKb > 0 
+        ? Math.round(((totalOriginalKb - totalCompressedKb) / totalOriginalKb) * 100) 
+        : 0;
+
+      setProgress(100);
+      setCompressionStats({
+        originalKb: totalOriginalKb,
+        compressedKb: totalCompressedKb,
+        savingsPct,
+        count: compressedResults.length
       });
-    });
 
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          return 90;
-        }
-        return prev + 25;
-      });
-    }, 120);
-
-    Promise.all(readPromises).then(newBase64Images => {
+      onImagesChange([...images, ...newBase64Images]);
+    } catch (err) {
+      console.error("Image compression error:", err);
+      setErrorMsg("Error processing images. Please select valid photo files.");
+    } finally {
       setTimeout(() => {
-        setProgress(100);
         setCompressing(false);
-        onImagesChange([...images, ...newBase64Images]);
-      }, 400);
-    });
+      }, 300);
+      // Reset input value so user can upload again if needed
+      e.target.value = '';
+    }
   };
 
   const removeImage = (indexToRemove) => {
@@ -69,7 +80,7 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
           type="file" 
           id="crop-image-input" 
           multiple 
-          accept="image/jpeg,image/jpg,image/png" 
+          accept="image/jpeg,image/jpg,image/png,image/webp" 
           onChange={handleFileSelect}
           className="hidden" 
           disabled={images.length >= maxImages || compressing}
@@ -86,12 +97,17 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
               Tap to Take Photo or Upload Crop Images
             </span>
             <span className="text-xs text-slate-500 block mt-1">
-              Supports JPG, JPEG, PNG (Auto-compressed for fast upload)
+              Supports JPG, PNG & WebP (Auto-compressed to ultra-lightweight Base64 — no cloud storage needed)
             </span>
           </div>
-          <span className="inline-flex items-center gap-1 text-xs font-semibold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
-            <Upload className="w-3.5 h-3.5" /> Upload up to {maxImages} photos ({images.length}/{maxImages})
-          </span>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+              <Upload className="w-3.5 h-3.5" /> Upload up to {maxImages} photos ({images.length}/{maxImages})
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full">
+              <Zap className="w-3 h-3 text-blue-600" /> Direct Database Sync
+            </span>
+          </div>
         </label>
       </div>
 
@@ -101,7 +117,7 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
           <div className="flex items-center justify-between text-xs font-semibold text-emerald-800">
             <span className="flex items-center gap-1.5">
               <ImageIcon className="w-4 h-4 animate-bounce text-emerald-600" /> 
-              Optimizing & compressing crop photos...
+              Compressing & converting to Base64 in-browser...
             </span>
             <span>{progress}%</span>
           </div>
@@ -111,6 +127,22 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
               style={{ width: `${progress}%` }}
             ></div>
           </div>
+        </div>
+      )}
+
+      {/* Compression Success Banner */}
+      {compressionStats && !compressing && (
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-emerald-100/70 border border-emerald-300 rounded-xl text-xs text-emerald-900">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>
+              <strong>Optimized {compressionStats.count} photo(s):</strong> {compressionStats.originalKb} KB → {compressionStats.compressedKb} KB
+              {compressionStats.savingsPct > 0 && <span className="ml-1 text-emerald-700 font-bold">({compressionStats.savingsPct}% smaller)</span>}
+            </span>
+          </div>
+          <span className="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+            Zero Storage Cost
+          </span>
         </div>
       )}
 
@@ -125,8 +157,13 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
       {/* Previews Grid */}
       {images.length > 0 && (
         <div>
-          <div className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Attached Crop Photos ({images.length})
+          <div className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Attached Crop Photos ({images.length}/{maxImages})
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal">
+              Click &times; to remove
+            </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {images.map((imgUrl, idx) => (
@@ -140,13 +177,14 @@ export const ImageUploader = ({ images = [], onImagesChange, maxImages = 5 }) =>
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
-                  className="absolute top-1.5 right-1.5 bg-red-600 text-white p-1 rounded-full shadow-md hover:bg-red-700 transition-colors"
+                  className="absolute top-1.5 right-1.5 bg-red-600 hover:bg-red-700 text-white p-1 rounded-full shadow-md transition-colors"
                   title="Remove image"
                 >
                   <X className="w-4 h-4" />
                 </button>
-                <div className="absolute bottom-1 left-1.5 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
-                  Photo #{idx + 1}
+                <div className="absolute bottom-1 left-1.5 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                  <span>Photo #{idx + 1}</span>
+                  <span className="text-emerald-400">✓ Base64</span>
                 </div>
               </div>
             ))}

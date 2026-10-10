@@ -14,7 +14,9 @@ import {
   Calendar,
   Image as ImageIcon,
   TrendingUp,
-  XCircle
+  XCircle,
+  Camera,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -22,6 +24,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Modal } from '../../components/common/Modal';
 import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallback';
+import { compressImageToBase64 } from '../../utils/imageCompressor';
 
 export const IssueDetailsPage = () => {
   const { id } = useParams();
@@ -35,12 +38,29 @@ export const IssueDetailsPage = () => {
   const response = expertResponses.find(r => r.issueId === id);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [updateFormData, setUpdateFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     description: '',
     condition: 'Improving',
     image: ''
   });
+
+  const handleTimelineImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const res = await compressImageToBase64(file, { maxWidth: 900, maxHeight: 900, quality: 0.72 });
+      setUpdateFormData(prev => ({ ...prev, image: res.dataUrl }));
+    } catch (err) {
+      console.error("Failed to compress image:", err);
+      alert(t('Failed to process image. Please try another photo.', 'Failed to process image. Please try another photo.'));
+    } finally {
+      setUploadingImage(false);
+      e.target.value = '';
+    }
+  };
 
   if (!issue) {
     return (
@@ -352,6 +372,48 @@ export const IssueDetailsPage = () => {
               placeholder={t('symptomsPlaceholder')}
               className="w-full p-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-xs font-medium"
             />
+          </div>
+
+          <div>
+            <label className="block mb-1">{t('uploadPhotosLabel')} ({t('Optional', 'Optional')})</label>
+            {updateFormData.image ? (
+              <div className="relative inline-block rounded-xl overflow-hidden border border-slate-300 shadow-sm">
+                <img 
+                  src={updateFormData.image} 
+                  alt="Update preview" 
+                  className="w-28 h-28 object-cover" 
+                />
+                <button
+                  type="button"
+                  onClick={() => setUpdateFormData({ ...updateFormData, image: '' })}
+                  className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white p-1 rounded-full shadow"
+                  title="Remove image"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+                <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">
+                  Base64
+                </span>
+              </div>
+            ) : (
+              <div>
+                <input 
+                  type="file" 
+                  id="timeline-image-input" 
+                  accept="image/jpeg,image/jpg,image/png,image/webp" 
+                  className="hidden" 
+                  onChange={handleTimelineImageSelect}
+                  disabled={uploadingImage}
+                />
+                <label 
+                  htmlFor="timeline-image-input"
+                  className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2.5 border border-dashed border-emerald-400 bg-emerald-50/60 hover:bg-emerald-100/60 rounded-xl text-emerald-800 text-xs font-bold transition-colors"
+                >
+                  <Camera className="w-4 h-4 text-emerald-600" />
+                  {uploadingImage ? t('Compressing photo...', 'Compressing photo...') : t('Attach Recovery Photo (Base64)', 'Attach Recovery Photo (Base64)')}
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="pt-3 flex justify-end gap-2">

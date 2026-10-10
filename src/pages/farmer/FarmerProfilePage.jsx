@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Phone, Mail, MapPin, Globe, CheckCircle2, Save, Trash2, AlertTriangle, X } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Globe, CheckCircle2, Save, Trash2, AlertTriangle, X, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { compressImageToBase64 } from '../../utils/imageCompressor';
 
 export const FarmerProfilePage = () => {
   const { currentUser, updateProfile, deleteAccount } = useAuth();
   const { t, language, changeLanguage } = useLanguage();
   const navigate = useNavigate();
   const [saved, setSaved] = useState(false);
+  const [compressingAvatar, setCompressingAvatar] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [deleteError, setDeleteError] = useState('');
@@ -20,8 +22,25 @@ export const FarmerProfilePage = () => {
     district: currentUser?.district || 'Jalgaon',
     taluka: currentUser?.taluka || 'Chalisgaon',
     village: currentUser?.village || 'Patonda',
-    preferredLanguage: currentUser?.preferredLanguage || language || 'English'
+    preferredLanguage: currentUser?.preferredLanguage || language || 'English',
+    avatar: currentUser?.avatar || ''
   });
+
+  const handleAvatarSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCompressingAvatar(true);
+    try {
+      const res = await compressImageToBase64(file, { maxWidth: 400, maxHeight: 400, quality: 0.75 });
+      setFormData(prev => ({ ...prev, avatar: res.dataUrl }));
+      updateProfile({ avatar: res.dataUrl });
+    } catch (err) {
+      console.error("Avatar compression error:", err);
+    } finally {
+      setCompressingAvatar(false);
+      e.target.value = '';
+    }
+  };
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -55,6 +74,40 @@ export const FarmerProfilePage = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" /> {t('Profile details saved successfully!', 'Profile details saved successfully!')}
           </div>
         )}
+
+        <div className="flex items-center gap-5 border-b border-slate-100 pb-6">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl overflow-hidden bg-emerald-100 border-2 border-emerald-400 flex items-center justify-center text-emerald-800 font-black text-2xl shadow">
+              {formData.avatar ? (
+                <img src={formData.avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                formData.fullName?.charAt(0) || <User className="w-8 h-8 text-emerald-700" />
+              )}
+            </div>
+            <input 
+              type="file" 
+              id="farmer-avatar-input" 
+              accept="image/jpeg,image/jpg,image/png,image/webp" 
+              className="hidden" 
+              onChange={handleAvatarSelect}
+              disabled={compressingAvatar}
+            />
+            <label 
+              htmlFor="farmer-avatar-input"
+              className="absolute -bottom-1 -right-1 p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow cursor-pointer transition-colors"
+              title="Upload photo"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </label>
+          </div>
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900">{formData.fullName || currentUser?.fullName || "Farmer"}</h2>
+            <p className="text-xs text-slate-500 font-medium">{t('Farmer Member', 'Farmer Member')} • {formData.district}</p>
+            <label htmlFor="farmer-avatar-input" className="text-[11px] text-emerald-700 font-bold hover:underline cursor-pointer inline-flex items-center gap-1 mt-1">
+              <Camera className="w-3 h-3" /> {compressingAvatar ? t('Compressing...', 'Compressing...') : t('Upload Profile Photo (Base64)', 'Upload Profile Photo (Base64)')}
+            </label>
+          </div>
+        </div>
 
         <form onSubmit={handleSave} className="space-y-4 text-xs font-semibold text-slate-700">
           <div>
