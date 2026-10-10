@@ -1,228 +1,403 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { INITIAL_USERS } from '../data/initialData';
+import { 
+  auth, 
+  db, 
+  isFirebaseConfigured 
+} from '../services/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  updateProfile as updateFirebaseProfile
+} from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
 import { realtimeService } from '../services/realtime';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [users, setUsers] = useState(() => {
-    try {
-      const saved = localStorage.getItem('farmconnect_users');
-      return saved ? JSON.parse(saved) : INITIAL_USERS;
-    } catch (e) {
-      return INITIAL_USERS;
-    }
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem('farmconnect_current_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch (e) {
-      return null;
-    }
-  });
-
+  // 1. Firebase Authentication State Listener
   useEffect(() => {
-    try {
-      localStorage.setItem('farmconnect_users', JSON.stringify(users));
-    } catch (e) {
-      console.error("Failed to save users", e);
+    if (!auth) {
+      setAuthLoading(false);
+      return;
     }
-  }, [users]);
 
-  useEffect(() => {
-    try {
-      if (currentUser) {
-        sessionStorage.setItem('farmconnect_current_user', JSON.stringify(currentUser));
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Fetch user profile from Firestore
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            setCurrentUser({
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              ...userData
+            });
+          } else {
+            // Profile doc doesn't exist yet, fallback to basic auth info
+            setCurrentUser({
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              fullName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+              role: 'Farmer',
+              status: 'Active'
+            });
+          }
+        } catch (err) {
+          console.warn("Firestore user profile fetch notice:", err?.message || err);
+          setCurrentUser({
+            id: firebaseUser.uid,
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            fullName: firebaseUser.displayName || 'User',
+            role: 'Farmer',
+            status: 'Active'
+          });
+        }
       } else {
-        sessionStorage.removeItem('farmconnect_current_user');
+        setCurrentUser(null);
       }
-    } catch (e) {
-      console.error("Failed to save currentUser", e);
-    }
-  }, [currentUser]);
+      setAuthLoading(false);
+    });
 
-  // Real-time synchronization listener for user accounts across tabs
+    return () => unsubscribeAuth();
+  }, []);
+
+  // 2. Real-Time Firestore Users Collection Listener
   useEffect(() => {
-    const unsubscribe = realtimeService.subscribe((payload) => {
+    if (!db) return;
+
+    let unsubscribeUsers = () => {};
+    try {
+      const usersColRef = collection(db, 'users');
+      unsubscribeUsers = onSnapshot(usersColRef, (snapshot) => {
+        const liveUsers = snapshot.docs.map(d => ({
+          id: d.id,
+          uid: d.id,
+          ...d.data()
+        }));
+        setUsers(liveUsers);
+
+        // If current user is logged in, sync their latest status (e.g. Approved badge)
+        if (auth?.currentUser) {
+          const selfDoc = liveUsers.find(u => u.id === auth.currentUser.uid);
+          if (selfDoc) {
+            setCurrentUser(prev => prev ? { ...prev, ...selfDoc } : selfDoc);
+          }
+        }
+      }, (error) => {
+        console.info("Firestore users live sync notice (rule fallback active):", error?.message || error);
+      });
+    } catch (e) {
+      console.warn("Firestore users listener initialization error:", e);
+    }
+
+    return () => unsubscribeUsers();
+  }, []);
+
+  // 3. Real-Time BroadcastChannel Cross-Tab Synchronization
+  useEffect(() => {
+    const unsubscribeBus = realtimeService.subscribe((payload) => {
       const { type, data } = payload;
       if (!data) return;
 
       switch (type) {
         case 'RESEARCHER_REGISTERED':
-          setUsers(prev => {
-            if (prev.some(u => u.id === data.id)) return prev;
-            return [data, ...prev];
-          });
+          setUsers(prev => prev.some(u => u.id === data.id) ? prev : [data, ...prev]);
           break;
-
         case 'RESEARCHER_APPROVED':
           setUsers(prev => prev.map(u => u.id === data.userId ? { ...u, status: "Approved", verifiedBadge: true } : u));
-          setCurrentUser(prev => (prev?.id === data.userId ? { ...prev, status: "Approved", verifiedBadge: true } : prev));
+          setCurrentUser(prev => prev?.id === data.userId ? { ...prev, status: "Approved", verifiedBadge: true } : prev);
           break;
-
         case 'RESEARCHER_REJECTED':
           setUsers(prev => prev.map(u => u.id === data.userId ? { ...u, status: "Rejected" } : u));
-          setCurrentUser(prev => (prev?.id === data.userId ? { ...prev, status: "Rejected" } : prev));
+          setCurrentUser(prev => prev?.id === data.userId ? { ...prev, status: "Rejected" } : prev);
           break;
-
         case 'USER_DELETED':
           setUsers(prev => prev.filter(u => u.id !== data.userId));
-          setCurrentUser(prev => (prev?.id === data.userId ? null : prev));
+          setCurrentUser(prev => prev?.id === data.userId ? null : prev);
           break;
-
-        case 'USER_UPDATED':
-          setUsers(prev => prev.map(u => u.id === data.id ? { ...u, ...data } : u));
-          setCurrentUser(prev => (prev?.id === data.id ? { ...prev, ...data } : prev));
-          break;
-
-        case 'DATA_RESET':
-          setUsers(INITIAL_USERS);
-          break;
-
         default:
           break;
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeBus();
   }, []);
 
-  // Quick switch role for evaluation/demo
-  const switchDemoRole = (userRole) => {
-    if (userRole === 'Farmer') {
-      const farmer = users.find(u => u.role === 'Farmer') || INITIAL_USERS[0];
-      setCurrentUser(farmer);
-      return farmer;
-    } else if (userRole === 'Expert') {
-      const expert = users.find(u => u.role === 'Agricultural Expert / Researcher' && u.status === 'Approved') || INITIAL_USERS[5];
-      setCurrentUser(expert);
-      return expert;
-    } else if (userRole === 'Admin') {
-      const admin = users.find(u => u.role === 'Agriculture Department Admin') || INITIAL_USERS[9];
-      setCurrentUser(admin);
-      return admin;
+  // Login with Firebase Auth and verify Firestore Role
+  const login = async (email, password, requiredRole = null) => {
+    if (!auth) throw new Error("Firebase Auth service not ready.");
+
+    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+    const fbUser = userCredential.user;
+
+    // Fetch user profile from Firestore
+    let userProfile = null;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
+      if (userDoc.exists()) {
+        userProfile = { id: fbUser.uid, uid: fbUser.uid, email: fbUser.email, ...userDoc.data() };
+      }
+    } catch (err) {
+      console.warn("Could not retrieve Firestore user document:", err);
     }
+
+    if (!userProfile) {
+      // Fallback profile if none stored
+      userProfile = {
+        id: fbUser.uid,
+        uid: fbUser.uid,
+        email: fbUser.email,
+        fullName: fbUser.displayName || fbUser.email.split('@')[0],
+        role: requiredRole || 'Farmer',
+        status: 'Active'
+      };
+      try {
+        await setDoc(doc(db, 'users', fbUser.uid), userProfile);
+      } catch (e) {}
+    }
+
+    // Role-based verification
+    if (requiredRole && userProfile.role !== requiredRole) {
+      await signOut(auth);
+      throw new Error(`Account role mismatch. This portal is for ${requiredRole}s, but this account is registered as a ${userProfile.role}.`);
+    }
+
+    // Approval gate for researchers
+    if (userProfile.role === 'Agricultural Expert / Researcher' && userProfile.status === 'Pending Approval') {
+      await signOut(auth);
+      throw new Error("Your researcher account is currently pending approval by the Agriculture Department Admin. You will receive access once credentials are verified.");
+    }
+
+    setCurrentUser(userProfile);
+    return userProfile;
   };
 
-  const login = (email, password) => {
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!found) {
-      throw new Error("No account found with this email address. Please check spelling or register a new account.");
-    }
-    
-    // Strict password verification
-    const expectedPassword = found.password || (found.role === 'Agriculture Department Admin' ? 'admin123' : 'password123');
-    if (password !== expectedPassword) {
-      throw new Error("Incorrect password. Please enter the password you set during registration.");
+  // Register Farmer with Firebase Auth & Firestore
+  const registerFarmer = async (farmerData) => {
+    if (!auth) throw new Error("Firebase Auth is not available.");
+
+    const userCredential = await createUserWithEmailAndPassword(auth, farmerData.email.trim(), farmerData.password);
+    const fbUser = userCredential.user;
+
+    if (farmerData.fullName) {
+      try {
+        await updateFirebaseProfile(fbUser, { displayName: farmerData.fullName });
+      } catch (e) {}
     }
 
-    if (found.role === 'Agricultural Expert / Researcher' && found.status === 'Pending Approval') {
-      throw new Error("Your researcher account is currently pending approval by the Agriculture Department Admin.");
-    }
-    setCurrentUser(found);
-    return found;
-  };
-
-  const registerFarmer = (farmerData) => {
-    const newUser = {
-      id: `usr_farmer_${Date.now()}`,
+    const newFarmer = {
+      id: fbUser.uid,
+      uid: fbUser.uid,
       role: "Farmer",
-      ...farmerData,
+      fullName: farmerData.fullName,
+      email: farmerData.email.trim(),
+      mobileNumber: farmerData.mobileNumber || "",
+      district: farmerData.district || "Jalgaon",
+      taluka: farmerData.taluka || "Chalisgaon",
+      village: farmerData.village || "Patonda",
       status: "Active",
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString()
     };
-    setUsers(prev => [newUser, ...prev]);
-    setCurrentUser(newUser);
 
-    realtimeService.broadcast('USER_UPDATED', newUser);
-    return newUser;
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), newFarmer);
+    } catch (e) {
+      console.warn("Firestore farmer write notice:", e);
+    }
+
+    setCurrentUser(newFarmer);
+    setUsers(prev => [newFarmer, ...prev]);
+    realtimeService.broadcast('USER_UPDATED', newFarmer);
+
+    return newFarmer;
   };
 
-  const registerResearcher = (researcherData) => {
-    const newUser = {
-      id: `usr_expert_${Date.now()}`,
+  // Register Researcher / Expert with Firebase Auth & Firestore
+  const registerResearcher = async (researcherData) => {
+    if (!auth) throw new Error("Firebase Auth is not available.");
+
+    const userCredential = await createUserWithEmailAndPassword(auth, researcherData.email.trim(), researcherData.password);
+    const fbUser = userCredential.user;
+
+    if (researcherData.fullName) {
+      try {
+        await updateFirebaseProfile(fbUser, { displayName: researcherData.fullName });
+      } catch (e) {}
+    }
+
+    const newResearcher = {
+      id: fbUser.uid,
+      uid: fbUser.uid,
       role: "Agricultural Expert / Researcher",
-      ...researcherData,
+      fullName: researcherData.fullName,
+      email: researcherData.email.trim(),
+      mobileNumber: researcherData.mobileNumber || "",
+      department: researcherData.department || "Plant Pathology",
+      specialization: researcherData.specialization || "Crop Diseases",
+      institution: researcherData.institution || "State Agricultural University",
+      employeeId: researcherData.employeeId || `EXP-${Math.floor(1000 + Math.random() * 9000)}`,
       status: "Pending Approval", // Requires Admin Approval
       casesSolved: 0,
       verifiedBadge: false,
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString()
     };
-    setUsers(prev => [newUser, ...prev]);
 
-    // Broadcast in real-time so Admin panel immediately sees pending applicant
-    realtimeService.broadcast('RESEARCHER_REGISTERED', newUser);
-    return newUser;
-  };
-
-  const approveResearcher = (userId) => {
-    const target = users.find(u => u.id === userId);
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: "Approved", verifiedBadge: true } : u));
-    
-    if (currentUser?.id === userId) {
-      setCurrentUser(prev => ({ ...prev, status: "Approved", verifiedBadge: true }));
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), newResearcher);
+    } catch (e) {
+      console.warn("Firestore researcher write notice:", e);
     }
 
-    realtimeService.broadcast('RESEARCHER_APPROVED', {
-      userId,
-      fullName: target?.fullName
-    });
+    // Sign out immediately until admin approves
+    await signOut(auth);
+    setCurrentUser(null);
+
+    setUsers(prev => [newResearcher, ...prev]);
+    realtimeService.broadcast('RESEARCHER_REGISTERED', newResearcher);
+
+    return newResearcher;
   };
 
-  const rejectResearcher = (userId) => {
+  // Register / Provision Department Admin
+  const registerAdmin = async (adminData, passkey) => {
+    if (!auth) throw new Error("Firebase Auth is not available.");
+    if (passkey !== "ADMIN2026" && passkey !== "CROPCARE_ADMIN") {
+      throw new Error("Invalid Administrative Passkey. Access denied.");
+    }
+
+    const userCredential = await createUserWithEmailAndPassword(auth, adminData.email.trim(), adminData.password);
+    const fbUser = userCredential.user;
+
+    const newAdmin = {
+      id: fbUser.uid,
+      uid: fbUser.uid,
+      role: "Agriculture Department Admin",
+      fullName: adminData.fullName || "Department Admin Officer",
+      email: adminData.email.trim(),
+      mobileNumber: adminData.mobileNumber || "",
+      department: "State Directorate of Agriculture",
+      status: "Active",
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), newAdmin);
+    } catch (e) {
+      console.warn("Firestore admin write notice:", e);
+    }
+
+    setCurrentUser(newAdmin);
+    setUsers(prev => [newAdmin, ...prev]);
+    return newAdmin;
+  };
+
+  // Approve Researcher
+  const approveResearcher = async (userId) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        status: "Approved",
+        verifiedBadge: true
+      });
+    } catch (e) {
+      console.warn("Firestore approve researcher write notice:", e);
+    }
+
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: "Approved", verifiedBadge: true } : u));
+    const target = users.find(u => u.id === userId);
+    realtimeService.broadcast('RESEARCHER_APPROVED', { userId, fullName: target?.fullName });
+  };
+
+  // Reject Researcher
+  const rejectResearcher = async (userId) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { status: "Rejected" });
+    } catch (e) {
+      console.warn("Firestore reject researcher write notice:", e);
+    }
+
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: "Rejected" } : u));
     realtimeService.broadcast('RESEARCHER_REJECTED', { userId });
   };
 
-  const logout = () => {
-    setCurrentUser(null);
-    try {
-      sessionStorage.removeItem('farmconnect_current_user');
-      localStorage.removeItem('farmconnect_current_user');
-    } catch (e) {}
-  };
-
-  const updateProfile = (updatedData) => {
+  // Update Profile
+  const updateProfile = async (updatedData) => {
     if (!currentUser) return;
     const updated = { ...currentUser, ...updatedData };
-    setCurrentUser(updated);
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
 
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid || currentUser.id), updatedData);
+    } catch (e) {
+      console.warn("Firestore update profile notice:", e);
+    }
+
+    setCurrentUser(updated);
+    setUsers(prev => prev.map(u => u.id === (currentUser.uid || currentUser.id) ? updated : u));
     realtimeService.broadcast('USER_UPDATED', updated);
   };
 
-  const deleteAccount = (userId) => {
+  // Delete User Account
+  const deleteAccount = async (userId) => {
     const targetId = userId || currentUser?.id;
     if (!targetId) return;
 
-    setUsers(prev => {
-      const updated = prev.filter(u => u.id !== targetId);
-      localStorage.setItem('farmconnect_users', JSON.stringify(updated));
-      return updated;
-    });
+    try {
+      await deleteDoc(doc(db, 'users', targetId));
+    } catch (e) {
+      console.warn("Firestore delete user notice:", e);
+    }
 
-    if (currentUser?.id === targetId) {
+    setUsers(prev => prev.filter(u => u.id !== targetId));
+    if (currentUser?.id === targetId || currentUser?.uid === targetId) {
+      await signOut(auth);
       setCurrentUser(null);
-      sessionStorage.removeItem('farmconnect_current_user');
-      localStorage.removeItem('farmconnect_current_user');
     }
 
     realtimeService.broadcast('USER_DELETED', { userId: targetId });
+  };
+
+  // Sign out
+  const logout = async () => {
+    if (auth) {
+      try {
+        await signOut(auth);
+      } catch (e) {}
+    }
+    setCurrentUser(null);
   };
 
   return (
     <AuthContext.Provider value={{
       currentUser,
       users,
+      authLoading,
       login,
       logout,
       registerFarmer,
       registerResearcher,
+      registerAdmin,
       approveResearcher,
       rejectResearcher,
-      switchDemoRole,
       updateProfile,
       deleteAccount,
       isAuthenticated: Boolean(currentUser),

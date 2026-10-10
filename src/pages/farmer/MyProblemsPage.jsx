@@ -12,7 +12,7 @@ export const MyProblemsPage = () => {
   const { issues } = useData();
   const { t } = useLanguage();
 
-  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerName === currentUser?.fullName);
+  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerId === currentUser?.uid || (currentUser?.fullName && i.farmerName === currentUser.fullName));
 
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');

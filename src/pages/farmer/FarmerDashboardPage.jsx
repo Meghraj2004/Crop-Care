@@ -27,7 +27,7 @@ export const FarmerDashboardPage = () => {
   const { t } = useLanguage();
 
   // Filter issues for current farmer
-  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerName === currentUser?.fullName);
+  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerId === currentUser?.uid || (currentUser?.fullName && i.farmerName === currentUser.fullName));
 
   // Statistics
   const totalReported = farmerIssues.length;
@@ -50,7 +50,7 @@ export const FarmerDashboardPage = () => {
             {t('welcomeBack')}, {currentUser?.fullName || t('roleFarmer')}!
           </h1>
           <p className="text-emerald-100 text-xs sm:text-sm font-medium">
-            {t('locationLabel')}: {currentUser?.village || "Patonda"}, {currentUser?.taluka || "Chalisgaon"}, {currentUser?.district || "Jalgaon"} {t('district')}
+            {t('locationLabel')}: {currentUser?.village ? `${currentUser.village}, ${currentUser.taluka}, ` : ''}{currentUser?.district ? `${currentUser.district} ${t('district')}` : 'Registered Farm'}
           </p>
         </div>
 

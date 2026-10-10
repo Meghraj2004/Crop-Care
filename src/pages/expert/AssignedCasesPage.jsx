@@ -17,8 +17,10 @@ export const AssignedCasesPage = () => {
 
   const assignedIssues = issues.filter(i => 
     i.assignedExpertId === currentUser?.id || 
-    i.assignedExpertName === currentUser?.fullName ||
-    i.departmentName === currentUser?.department
+    i.assignedExpertId === currentUser?.uid || 
+    (currentUser?.fullName && i.assignedExpertName === currentUser.fullName) ||
+    (currentUser?.department && i.departmentName?.toLowerCase() === currentUser.department.toLowerCase()) ||
+    !i.assignedExpertId
   );
 
   const filteredIssues = assignedIssues.filter(issue => {

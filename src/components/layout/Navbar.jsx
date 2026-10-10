@@ -49,16 +49,9 @@ export const Navbar = () => {
     if (notif.link) navigate(notif.link);
   };
 
-  const handleSwitchDemo = (role) => {
-    switchDemoRole(role);
-    if (role === 'Farmer') navigate('/farmer/dashboard');
-    else if (role === 'Expert') navigate('/expert/dashboard');
-    else if (role === 'Admin') navigate('/admin/dashboard');
-  };
-
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
-      {/* Top Banner: Agriculture Department Header, Live Real-Time Status & Demo Switcher */}
+      {/* Top Banner: Agriculture Department Header, Live Firestore Real-Time Status & Authenticated Role */}
       <div className="bg-emerald-950 text-white text-xs px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 border-b border-emerald-900">
         <div className="flex items-center gap-3 font-medium text-emerald-100">
           <span className="bg-emerald-700/90 px-2 py-0.5 rounded text-[11px] uppercase tracking-wider font-extrabold text-emerald-100 shadow-sm">
@@ -69,33 +62,32 @@ export const Navbar = () => {
           {/* Real-Time Live Status Pill */}
           <div className="inline-flex items-center gap-1.5 bg-emerald-900/90 border border-emerald-600/50 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-emerald-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>Live Real-Time Synced</span>
+            <span>Firestore Live Real-Time</span>
           </div>
         </div>
 
-        {/* Quick Demo Switcher Toolbar */}
+        {/* Authenticated Active Role Indicator */}
         <div className="flex items-center gap-2">
-          <span className="text-emerald-300 font-semibold text-[11px] hidden md:inline">⚡ {t('quickDemoRole')}:</span>
-          <div className="inline-flex bg-emerald-900/90 rounded-lg p-0.5 border border-emerald-700/60 shadow-sm">
-            <button 
-              onClick={() => handleSwitchDemo('Farmer')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${isFarmer ? 'bg-emerald-600 text-white shadow' : 'text-emerald-300 hover:text-white'}`}
+          {currentUser ? (
+            <div className="inline-flex items-center gap-2 bg-emerald-900/90 rounded-lg px-2.5 py-0.5 border border-emerald-700/60 shadow-sm">
+              <span className="text-[11px] text-emerald-200 font-medium">Active Session:</span>
+              <span className={`px-2 py-0.2 rounded text-[11px] font-black ${
+                isFarmer ? 'bg-emerald-600 text-white' :
+                isExpert ? 'bg-teal-600 text-white' :
+                'bg-purple-600 text-white'
+              }`}>
+                {isFarmer ? '👨‍🌾 Farmer' : isExpert ? '👨‍🔬 Expert' : '🏛️ Admin'}
+              </span>
+              <span className="text-white text-[11px] font-bold max-w-[120px] truncate">{currentUser.fullName}</span>
+            </div>
+          ) : (
+            <Link 
+              to="/login"
+              className="text-emerald-300 hover:text-white font-bold text-[11px] transition-colors"
             >
-              👨‍🌾 {t('roleFarmer')}
-            </button>
-            <button 
-              onClick={() => handleSwitchDemo('Expert')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${isExpert ? 'bg-teal-600 text-white shadow' : 'text-emerald-300 hover:text-white'}`}
-            >
-              👨‍🔬 {t('roleExpert')}
-            </button>
-            <button 
-              onClick={() => handleSwitchDemo('Admin')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${isAdmin ? 'bg-purple-600 text-white shadow' : 'text-emerald-300 hover:text-white'}`}
-            >
-              🏛️ {t('roleAdmin')}
-            </button>
-          </div>
+              Sign In to Your Role Portal →
+            </Link>
+          )}
         </div>
       </div>
 

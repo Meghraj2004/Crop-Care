@@ -47,10 +47,10 @@ export const ExpertDashboardPage = () => {
             <span>👨‍🔬 Official Agriculture Expert Portal</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-black">
-            Welcome, {currentUser?.fullName || "Dr. Anil Sharma"}!
+            Welcome, {currentUser?.fullName || "Agricultural Expert"}!
           </h1>
           <p className="text-teal-100 text-xs sm:text-sm font-medium">
-            {currentUser?.department || "Plant Pathology"} • {currentUser?.institution || "MPKV Rahuri"}
+            {currentUser?.department || "Agriculture Department"} • {currentUser?.institution || "Agricultural University"}
           </p>
         </div>
 

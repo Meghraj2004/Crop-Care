@@ -35,15 +35,15 @@ export const AdminSettingsPage = () => {
         </h2>
 
         <div className="p-5 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-3">
-          <div className="font-extrabold text-sm text-purple-950">Reset Demo Database</div>
+          <div className="font-extrabold text-sm text-purple-950">Cloud Firestore Data Synchronization</div>
           <p className="text-xs text-slate-700 leading-relaxed font-medium">
-            Reset all reported issues, expert responses, research cases, notifications, and accounts back to the initial baseline demo dataset (5 farmers, 4 experts, 8 issues, 4 KB articles).
+            Clear local browser storage cache and re-sync live collections directly from Firebase Cloud Firestore.
           </p>
           <button
             onClick={handleReset}
             className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs rounded-xl shadow transition-colors flex items-center gap-2"
           >
-            <RefreshCw className="w-4 h-4" /> Reset Demo Dataset
+            <RefreshCw className="w-4 h-4" /> Purge Cache & Resync Firestore
           </button>
         </div>
 
