@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Sprout, 
@@ -7,15 +7,17 @@ import {
   LogIn, 
   AlertCircle, 
   CheckCircle2, 
-  ArrowRight,
-  ShieldAlert,
-  Building2
+  ArrowRight, 
+  ShieldAlert, 
+  Building2,
+  Sparkles,
+  UserCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export const LoginPage = () => {
-  const { login, currentUser } = useAuth();
+  const { login, currentUser, users } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,18 +30,52 @@ export const LoginPage = () => {
 
   const notificationMessage = location.state?.message;
 
+  // Real-time Email-sensitive account detection
+  const cleanEmail = email.trim().toLowerCase();
+  const isExpertDetected = Boolean(
+    cleanEmail.length > 3 && (
+      cleanEmail.includes('expert') ||
+      cleanEmail.includes('scientist') ||
+      cleanEmail.includes('dr.') ||
+      cleanEmail.endsWith('@agri.gov.in') ||
+      users.some(u => (u.email || '').toLowerCase() === cleanEmail && u.role === 'Agricultural Expert / Researcher')
+    )
+  );
+  const isAdminDetected = Boolean(
+    cleanEmail.length > 3 && (
+      cleanEmail === 'admin123@gamil.com' ||
+      cleanEmail === 'admin123@gmail.com' ||
+      cleanEmail.includes('admin')
+    )
+  );
+
+  // Auto-adapt selected role tab when user enters their email
+  useEffect(() => {
+    if (isExpertDetected && selectedRole !== 'Agricultural Expert / Researcher') {
+      setSelectedRole('Agricultural Expert / Researcher');
+    } else if (isAdminDetected) {
+      // Keep state aware
+    }
+  }, [cleanEmail, isExpertDetected, isAdminDetected]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setLoading(true);
 
     try {
+      // Smart login: authenticates and auto-detects true account role
       const user = await login(email, password, selectedRole);
       setLoading(false);
-      if (user.role === 'Farmer') navigate('/farmer/dashboard');
-      else if (user.role === 'Agricultural Expert / Researcher') navigate('/expert/dashboard');
-      else if (user.role === 'Agriculture Department Admin') navigate('/admin/dashboard');
-      else navigate('/home');
+
+      // Email-sensitive intelligent routing: open the exact right dashboard
+      if (user.role === 'Agricultural Expert / Researcher') {
+        navigate('/expert/dashboard');
+      } else if (user.role === 'Agriculture Department Admin') {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/farmer/dashboard');
+      }
     } catch (err) {
       setLoading(false);
       let message = err.message || 'Login failed. Please check your credentials.';
@@ -82,34 +118,47 @@ export const LoginPage = () => {
           </div>
         )}
 
-        {/* Public Role Selector: ONLY Farmer & Expert */}
+        {/* Public Role Selector: Farmer & Expert (Smart Auto-switches based on email) */}
         <div className="bg-slate-100 p-1.5 rounded-2xl flex gap-1 border border-slate-200 text-xs font-extrabold shadow-inner">
           <button
             type="button"
             onClick={() => { setSelectedRole('Farmer'); setErrorMsg(''); }}
-            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${selectedRole === 'Farmer' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              selectedRole === 'Farmer' && !isExpertDetected 
+                ? 'bg-emerald-600 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
             <span>👨‍🌾</span> <span>Farmer</span>
           </button>
           <button
             type="button"
             onClick={() => { setSelectedRole('Agricultural Expert / Researcher'); setErrorMsg(''); }}
-            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${selectedRole === 'Agricultural Expert / Researcher' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              selectedRole === 'Agricultural Expert / Researcher' || isExpertDetected
+                ? 'bg-teal-600 text-white shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
             <span>👨‍🔬</span> <span>Expert / Researcher</span>
           </button>
         </div>
 
-        {/* Role Notice */}
+        {/* Role Portal Notice */}
         <div className={`p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between ${
-          selectedRole === 'Farmer' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
-          'bg-teal-50 border-teal-200 text-teal-800'
+          isExpertDetected || selectedRole === 'Agricultural Expert / Researcher'
+            ? 'bg-teal-50 border-teal-200 text-teal-800'
+            : isAdminDetected 
+            ? 'bg-purple-50 border-purple-200 text-purple-800'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
         }`}>
           <span>
-            Signing in to: <strong>{selectedRole} Portal</strong>
+            Signing in to: <strong>
+              {isAdminDetected ? 'Directorate Admin Portal' : isExpertDetected ? 'Agricultural Expert Portal' : `${selectedRole} Portal`}
+            </strong>
           </span>
           <span className="text-[10px] font-bold opacity-80 uppercase tracking-wider">
-            Verified Portal
+            Smart Auto-Detect
           </span>
         </div>
 
@@ -146,6 +195,21 @@ export const LoginPage = () => {
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
               </div>
+
+              {/* Email-sensitive Real-Time Detection Badges */}
+              {isExpertDetected && (
+                <div className="mt-2 p-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold flex items-center gap-1.5 animate-fade-in">
+                  <Sparkles className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span>Certified Expert Account detected • Opens Expert Review Dashboard</span>
+                </div>
+              )}
+
+              {isAdminDetected && (
+                <div className="mt-2 p-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 text-[11px] font-bold flex items-center gap-1.5 animate-fade-in">
+                  <Building2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span>Directorate Admin Email detected • Opens Administrative Control</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -172,18 +236,27 @@ export const LoginPage = () => {
               type="submit"
               disabled={loading}
               className={`w-full py-3.5 rounded-xl font-black text-xs text-white shadow-md transition-all flex items-center justify-center gap-2 ${
-                selectedRole === 'Farmer' ? 'bg-emerald-600 hover:bg-emerald-700' :
-                'bg-teal-600 hover:bg-teal-700'
+                isExpertDetected || selectedRole === 'Agricultural Expert / Researcher'
+                  ? 'bg-teal-600 hover:bg-teal-700'
+                  : isAdminDetected
+                  ? 'bg-purple-700 hover:bg-purple-800'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
               } disabled:opacity-50`}
             >
               <LogIn className="w-4 h-4" />
-              {loading ? "Authenticating..." : `Sign In as ${selectedRole === 'Farmer' ? 'Farmer' : 'Expert'}`}
+              {loading 
+                ? "Authenticating..." 
+                : isExpertDetected 
+                ? "Sign In to Expert Dashboard" 
+                : isAdminDetected 
+                ? "Sign In to Directorate Admin Portal" 
+                : `Sign In as ${selectedRole}`}
             </button>
           </form>
 
           {/* Registration / Account Notice */}
           <div className="border-t border-slate-100 pt-4 text-center space-y-2 text-xs">
-            {selectedRole === 'Farmer' ? (
+            {selectedRole === 'Farmer' && !isExpertDetected ? (
               <div className="space-y-1">
                 <span className="text-slate-500">New Farmer? </span>
                 <Link to="/register/farmer" className="text-emerald-700 font-extrabold hover:underline inline-flex items-center gap-1">
