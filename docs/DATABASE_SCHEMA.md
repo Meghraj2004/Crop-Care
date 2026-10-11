@@ -170,7 +170,7 @@ Stores user profile information for all roles.
 
 ### 2.2 Collection: `issues`
 Core crop problem case records reported by farmers.
-- **Document ID**: Formatted ID (e.g., `ISSUE-1001`)
+- **Document ID**: Formatted ID (e.g., `ISSUE-1791653114512`)
 - **Fields**:
   - `id` *(string, required)*: Primary key.
   - `farmerId` *(string, required)*: UID of the reporting farmer.

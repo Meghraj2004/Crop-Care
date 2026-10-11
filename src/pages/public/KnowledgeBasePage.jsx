@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Filter, CheckCircle2, ThumbsUp, Eye, BookOpen, Bookmark, Sparkles } from 'lucide-react';
 import { useData } from '../../context/DataContext';
@@ -6,8 +6,12 @@ import { useLanguage } from '../../context/LanguageContext';
 import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallback';
 
 export const KnowledgeBasePage = () => {
-  const { knowledgeArticles, savedSolutions, toggleSaveSolution } = useData();
+  const { knowledgeArticles, savedSolutions, toggleSaveSolution, loadKnowledgeArticles } = useData();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    loadKnowledgeArticles();
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCrop, setSelectedCrop] = useState('All');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   PlusCircle, 
@@ -23,8 +23,14 @@ import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallbac
 
 export const FarmerDashboardPage = () => {
   const { currentUser } = useAuth();
-  const { issues, expertResponses, notifications, savedSolutions } = useData();
+  const { issues, expertResponses, notifications, savedSolutions, loadFarmerData } = useData();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    if (currentUser?.uid || currentUser?.id) {
+      loadFarmerData(currentUser.uid || currentUser.id);
+    }
+  }, [currentUser?.uid, currentUser?.id]);
 
   // Filter issues for current farmer
   const farmerIssues = issues.filter(i => {

@@ -42,125 +42,136 @@ export const DataProvider = ({ children }) => {
     } catch (e) {}
   }, [savedSolutions]);
 
-  // 1. Primary: Load Baseline Data on-demand via REST API Endpoints
+  // 1. Primary: Load ONLY baseline departments metadata on initial app boot
   useEffect(() => {
     let isMounted = true;
-    const fetchApiData = async () => {
+    const fetchBaseline = async () => {
       try {
         setIsLoadingApi(true);
-        const [deptsRes, issuesRes, respRes, rcRes, kbRes, notifRes] = await Promise.allSettled([
-          api.departments.getAll(),
-          api.issues.getAll(),
-          api.expert.getAll(),
-          api.research.getAll(),
-          api.knowledge.getAll(),
-          api.notifications.getAll()
-        ]);
-
-        if (!isMounted) return;
-
-        if (deptsRes.status === 'fulfilled' && deptsRes.value?.length) {
-          setDepartments(deptsRes.value);
-        }
-        if (issuesRes.status === 'fulfilled' && issuesRes.value) {
-          setIssues(issuesRes.value);
-        }
-        if (respRes.status === 'fulfilled' && respRes.value) {
-          setExpertResponses(respRes.value);
-        }
-        if (rcRes.status === 'fulfilled' && rcRes.value) {
-          setResearchCases(rcRes.value);
-        }
-        if (kbRes.status === 'fulfilled' && kbRes.value) {
-          setKnowledgeArticles(kbRes.value);
-        }
-        if (notifRes.status === 'fulfilled' && notifRes.value) {
-          setNotifications(notifRes.value);
+        const deptsRes = await api.departments.getAll();
+        if (isMounted && Array.isArray(deptsRes) && deptsRes.length) {
+          setDepartments(deptsRes);
         }
       } catch (err) {
-        console.warn("API initialization notice:", err?.message || err);
+        console.warn("API departments notice:", err?.message || err);
       } finally {
         if (isMounted) setIsLoadingApi(false);
       }
     };
 
-    fetchApiData();
+    fetchBaseline();
     return () => { isMounted = false; };
   }, []);
 
-  // 2. Pure Cloud Firestore Real-Time Listeners (Secondary live sync channel)
-  useEffect(() => {
-    if (!db) return;
-
-    let unsubIssues = () => {}, unsubUpdates = () => {}, unsubResp = () => {};
-    let unsubRc = () => {}, unsubKb = () => {}, unsubDepts = () => {}, unsubNotifs = () => {};
-
-    const handleFirestoreError = (err, collectionName) => {
-      console.warn(`Firestore [${collectionName}] notice:`, err?.code || err?.message || err);
-      if (err?.code === 'permission-denied') {
-        setFirestorePermissionError(true);
-      }
-    };
-
+  // 2. On-Demand Separate Loaders per Route & Role (Only required data requested)
+  const loadFarmerData = async (farmerId) => {
+    if (!farmerId) return;
     try {
-      // 1. Listen to Issues
-      unsubIssues = onSnapshot(collection(db, 'issues'), (snap) => {
-        setFirestorePermissionError(false);
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setIssues(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-      }, (err) => handleFirestoreError(err, 'issues'));
-
-      // 2. Listen to Issue Timeline Updates
-      unsubUpdates = onSnapshot(collection(db, 'issue_updates'), (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setIssueUpdates(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-      }, (err) => handleFirestoreError(err, 'issue_updates'));
-
-      // 3. Listen to Expert Responses
-      unsubResp = onSnapshot(collection(db, 'expert_responses'), (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setExpertResponses(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-      }, (err) => handleFirestoreError(err, 'expert_responses'));
-
-      // 4. Listen to Research Cases
-      unsubRc = onSnapshot(collection(db, 'research_cases'), (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setResearchCases(list.sort((a, b) => new Date(b.lastUpdated || b.startDate || 0) - new Date(a.lastUpdated || a.startDate || 0)));
-      }, (err) => handleFirestoreError(err, 'research_cases'));
-
-      // 5. Listen to Knowledge Articles
-      unsubKb = onSnapshot(collection(db, 'knowledge_articles'), (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setKnowledgeArticles(list);
-      }, (err) => handleFirestoreError(err, 'knowledge_articles'));
-
-      // 6. Listen to Departments
-      unsubDepts = onSnapshot(collection(db, 'departments'), (snap) => {
-        if (!snap.empty) {
-          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          setDepartments(list);
-        }
-      }, (err) => handleFirestoreError(err, 'departments'));
-
-      // 7. Listen to Notifications
-      unsubNotifs = onSnapshot(collection(db, 'notifications'), (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setNotifications(list.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)));
-      }, (err) => handleFirestoreError(err, 'notifications'));
-    } catch (e) {
-      console.warn("Firestore listeners initialization notice:", e);
+      const [issuesRes, notifRes] = await Promise.allSettled([
+        api.issues.getAll({ farmerId }),
+        api.notifications.getAll({ userId: farmerId })
+      ]);
+      if (issuesRes.status === 'fulfilled' && issuesRes.value) {
+        setIssues(issuesRes.value);
+      }
+      if (notifRes.status === 'fulfilled' && notifRes.value) {
+        setNotifications(notifRes.value);
+      }
+    } catch (err) {
+      console.warn("loadFarmerData notice:", err?.message || err);
     }
+  };
 
-    return () => {
-      unsubIssues();
-      unsubUpdates();
-      unsubResp();
-      unsubRc();
-      unsubKb();
-      unsubDepts();
-      unsubNotifs();
-    };
-  }, []);
+  const loadExpertData = async (expertId) => {
+    try {
+      const [issuesRes, respRes, notifRes] = await Promise.allSettled([
+        api.issues.getAll(expertId ? { assignedExpertId: expertId } : {}),
+        api.expert.getAll(expertId ? { expertId } : {}),
+        api.notifications.getAll({ userId: expertId || 'all_experts' })
+      ]);
+      if (issuesRes.status === 'fulfilled' && issuesRes.value) {
+        setIssues(issuesRes.value);
+      }
+      if (respRes.status === 'fulfilled' && respRes.value) {
+        setExpertResponses(respRes.value);
+      }
+      if (notifRes.status === 'fulfilled' && notifRes.value) {
+        setNotifications(notifRes.value);
+      }
+    } catch (err) {
+      console.warn("loadExpertData notice:", err?.message || err);
+    }
+  };
+
+  const loadAdminData = async () => {
+    try {
+      const [issuesRes, deptsRes] = await Promise.allSettled([
+        api.issues.getAll(),
+        api.departments.getAll()
+      ]);
+      if (issuesRes.status === 'fulfilled' && issuesRes.value) {
+        setIssues(issuesRes.value);
+      }
+      if (deptsRes.status === 'fulfilled' && deptsRes.value) {
+        setDepartments(deptsRes.value);
+      }
+    } catch (err) {
+      console.warn("loadAdminData notice:", err?.message || err);
+    }
+  };
+
+  const loadKnowledgeArticles = async (filter = {}) => {
+    try {
+      const articles = await api.knowledge.getAll(filter);
+      if (articles) setKnowledgeArticles(articles);
+      return articles;
+    } catch (err) {
+      console.warn("loadKnowledgeArticles notice:", err?.message || err);
+      return [];
+    }
+  };
+
+  const loadResearchCases = async (filter = {}) => {
+    try {
+      const cases = await api.research.getAll(filter);
+      if (cases) setResearchCases(cases);
+      return cases;
+    } catch (err) {
+      console.warn("loadResearchCases notice:", err?.message || err);
+      return [];
+    }
+  };
+
+  const loadIssueById = async (id) => {
+    if (!id) return null;
+    try {
+      const issue = await api.issues.getById(id);
+      if (issue) {
+        setIssues(prev => {
+          const exists = prev.some(i => i.id === issue.id);
+          return exists ? prev.map(i => i.id === issue.id ? issue : i) : [issue, ...prev];
+        });
+        if (issue.timeline && Array.isArray(issue.timeline)) {
+          setIssueUpdates(prev => {
+            const ids = new Set(prev.map(p => p.id));
+            const newOnes = issue.timeline.filter(t => !ids.has(t.id));
+            return [...newOnes, ...prev];
+          });
+        }
+        if (issue.responses && Array.isArray(issue.responses)) {
+          setExpertResponses(prev => {
+            const ids = new Set(prev.map(p => p.id));
+            const newOnes = issue.responses.filter(r => !ids.has(r.id));
+            return [...newOnes, ...prev];
+          });
+        }
+      }
+      return issue;
+    } catch (err) {
+      console.warn("loadIssueById notice:", err?.message || err);
+      return null;
+    }
+  };
 
   // 2. Real-Time BroadcastChannel Event Listener (Local cross-tab instant responsiveness)
   useEffect(() => {
@@ -883,6 +894,12 @@ export const DataProvider = ({ children }) => {
       savedSolutions,
       firestorePermissionError,
       isLoadingApi,
+      loadFarmerData,
+      loadExpertData,
+      loadAdminData,
+      loadKnowledgeArticles,
+      loadResearchCases,
+      loadIssueById,
       fetchFarmerDashboard,
       fetchExpertDashboard,
       fetchAdminDashboard,

@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Microscope, FileText, Calendar, User, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 
 export const ResearchCasesPage = () => {
-  const { researchCases } = useData();
+  const { researchCases, loadResearchCases } = useData();
+
+  useEffect(() => {
+    loadResearchCases();
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">

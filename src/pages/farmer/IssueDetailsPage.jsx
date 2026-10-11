@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -30,8 +30,14 @@ export const IssueDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { issues, issueUpdates, expertResponses, addIssueUpdate } = useData();
+  const { issues, issueUpdates, expertResponses, addIssueUpdate, loadIssueById } = useData();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    if (id) {
+      loadIssueById(id);
+    }
+  }, [id]);
 
   const issue = issues.find(i => i.id === id);
   const updates = issueUpdates.filter(u => u.issueId === id).sort((a, b) => new Date(a.date) - new Date(b.date));

@@ -33,8 +33,17 @@ export const AdminDashboardPage = () => {
     knowledgeArticles, 
     departments, 
     firestorePermissionError, 
-    seedSampleFirestoreData 
+    seedSampleFirestoreData,
+    loadAdminData,
+    loadResearchCases,
+    loadKnowledgeArticles
   } = useData();
+
+  useEffect(() => {
+    loadAdminData();
+    loadResearchCases();
+    loadKnowledgeArticles();
+  }, []);
 
   const [seeding, setSeeding] = useState(false);
   const [seedStatus, setSeedStatus] = useState(null);

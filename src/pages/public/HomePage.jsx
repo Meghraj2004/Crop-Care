@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Sprout, 
@@ -28,7 +28,11 @@ import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallbac
 
 export const HomePage = () => {
   const { t } = useLanguage();
-  const { knowledgeArticles, issues, departments } = useData();
+  const { knowledgeArticles, issues, departments, loadKnowledgeArticles } = useData();
+
+  useEffect(() => {
+    loadKnowledgeArticles();
+  }, []);
 
   const categoriesList = [
     { name: "Crop Disease", icon: ShieldAlert, color: "text-red-600 bg-red-50 border-red-200", descKey: "descCropDisease" },

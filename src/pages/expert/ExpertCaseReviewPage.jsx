@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -24,7 +24,13 @@ export const ExpertCaseReviewPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { issues, issueUpdates, expertResponses, addExpertResponse, convertToResearchCase } = useData();
+  const { issues, issueUpdates, expertResponses, addExpertResponse, convertToResearchCase, loadIssueById } = useData();
+
+  useEffect(() => {
+    if (id) {
+      loadIssueById(id);
+    }
+  }, [id]);
 
   const issue = issues.find(i => i.id === id);
   const updates = issueUpdates.filter(u => u.issueId === id);

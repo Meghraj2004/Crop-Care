@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { PlusCircle, FileText, Search, Filter, Calendar, MapPin, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -9,8 +9,14 @@ import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallbac
 
 export const MyProblemsPage = () => {
   const { currentUser } = useAuth();
-  const { issues } = useData();
+  const { issues, loadFarmerData } = useData();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    if (currentUser?.uid || currentUser?.id) {
+      loadFarmerData(currentUser.uid || currentUser.id);
+    }
+  }, [currentUser?.uid, currentUser?.id]);
 
   const farmerIssues = issues.filter(i => {
     if (!currentUser) return false;

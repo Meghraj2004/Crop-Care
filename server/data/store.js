@@ -1,5 +1,116 @@
-// Professional Data Store for CropCare Platform API
-// Manages domain data models, relationships, and queries with on-demand filtering
+// Professional Cloud Firestore Connected Data Store for CropCare Platform API
+// Connects and dynamically synchronizes with Cloud Firestore database (cropcare-21809)
+// Serves REAL database records, avoiding mock/static constant localhost data.
+
+import https from 'https';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SNAPSHOT_PATH = path.join(__dirname, 'firestore_snapshot.json');
+
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/cropcare-21809/databases/(default)/documents';
+
+export const fetchFirestoreCollection = (collectionName) => {
+  return new Promise((resolve) => {
+    https.get(`${FIRESTORE_BASE}/${collectionName}`, (res) => {
+      let raw = '';
+      res.on('data', chunk => raw += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          if (!json.documents || !Array.isArray(json.documents)) {
+            return resolve([]);
+          }
+          const list = json.documents.map(doc => parseFirestoreDoc(doc)).filter(Boolean);
+          resolve(list);
+        } catch (e) {
+          resolve([]);
+        }
+      });
+    }).on('error', () => resolve([]));
+  });
+};
+
+export function parseFirestoreDoc(doc) {
+  if (!doc || !doc.name) return null;
+  const id = doc.name.split('/').pop();
+  const obj = { id };
+  if (!doc.fields) return obj;
+  for (const [key, val] of Object.entries(doc.fields)) {
+    if (!val) continue;
+    if ('stringValue' in val) obj[key] = val.stringValue;
+    else if ('integerValue' in val) obj[key] = parseInt(val.integerValue, 10);
+    else if ('doubleValue' in val) obj[key] = parseFloat(val.doubleValue);
+    else if ('booleanValue' in val) obj[key] = val.booleanValue;
+    else if ('timestampValue' in val) obj[key] = val.timestampValue;
+    else if ('arrayValue' in val) {
+      obj[key] = (val.arrayValue.values || []).map(item => {
+        if (!item) return '';
+        if ('stringValue' in item) return item.stringValue;
+        if ('integerValue' in item) return parseInt(item.integerValue, 10);
+        return item;
+      });
+    } else if ('nullValue' in val) {
+      obj[key] = null;
+    }
+  }
+  return obj;
+}
+
+export function toFirestoreFields(obj) {
+  const fields = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === null || val === undefined) {
+      fields[key] = { nullValue: null };
+    } else if (typeof val === 'string') {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === 'number') {
+      fields[key] = Number.isInteger(val) ? { integerValue: val.toString() } : { doubleValue: val };
+    } else if (typeof val === 'boolean') {
+      fields[key] = { booleanValue: val };
+    } else if (Array.isArray(val)) {
+      fields[key] = {
+        arrayValue: {
+          values: val.map(item => {
+            if (typeof item === 'object') return { stringValue: JSON.stringify(item) };
+            return { stringValue: String(item) };
+          })
+        }
+      };
+    }
+  }
+  return { fields };
+}
+
+export function saveFirestoreDoc(collectionName, docId, obj) {
+  return new Promise((resolve) => {
+    try {
+      const payload = JSON.stringify(toFirestoreFields(obj));
+      const url = new URL(`${FIRESTORE_BASE}/${collectionName}/${docId}`);
+      const req = https.request({
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let raw = '';
+        res.on('data', chunk => raw += chunk);
+        res.on('end', () => resolve(true));
+      });
+      req.on('error', () => resolve(false));
+      req.write(payload);
+      req.end();
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
 
 export const INITIAL_DEPARTMENTS = [
   { id: "dept_1", name: "Plant Pathology", code: "PATH", description: "Study of plant diseases caused by pathogens like fungi, bacteria, and viruses.", expertCount: 4 },
@@ -10,299 +121,108 @@ export const INITIAL_DEPARTMENTS = [
   { id: "dept_6", name: "Agricultural Extension", code: "EXTN", description: "Farmer advisory dissemination, field trials, and university outreach.", expertCount: 2 }
 ];
 
-export const INITIAL_ISSUES = [
-  {
-    id: "ISSUE-1001",
-    farmerId: "usr_farmer_ramesh",
-    farmerName: "Ramesh Patil",
-    farmerMobile: "9822014589",
-    farmerEmail: "ramesh.patil@cropcare.in",
-    title: "Severe Early Blight with Concentric Rings on Tomato Leaves",
-    cropName: "Tomato",
-    growthStage: "Flowering & Fruit Formation",
-    firstNoticedDate: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
-    category: "Crop Disease",
-    description: "Dark brown target-shaped concentric rings appeared on lower leaves after heavy monsoon shower. Lesions are spreading upwards toward stem and young green fruit clusters.",
-    images: ["https://images.unsplash.com/photo-1592417817098-8f3d6eb1475a?auto=format&fit=crop&w=800&q=80"],
-    state: "Maharashtra",
-    district: "Nashik",
-    taluka: "Dindori",
-    village: "Janori",
-    coordinates: "20.0063° N, 73.7902° E",
-    departmentId: "dept_1",
-    departmentName: "Plant Pathology",
-    assignedExpertId: "EXP-101",
-    assignedExpertName: "Dr. Anil Sharma",
-    status: "Expert Responded",
-    priority: "High",
-    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
-  },
-  {
-    id: "ISSUE-1002",
-    farmerId: "usr_farmer_suresh",
-    farmerName: "Suresh Chavan",
-    farmerMobile: "9422033412",
-    farmerEmail: "suresh.chavan@cropcare.in",
-    title: "Downy Mildew White Woolly Growth Under Grape Canopies",
-    cropName: "Grapes",
-    growthStage: "Berry Development",
-    firstNoticedDate: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0],
-    category: "Crop Disease",
-    description: "Yellow oily spots on upper leaf surface with dense white fungal growth underneath due to morning fog and high humidity. Young clusters turning brown.",
-    images: ["https://images.unsplash.com/photo-1537640538966-79f369143f8f?auto=format&fit=crop&w=800&q=80"],
-    state: "Maharashtra",
-    district: "Sangli",
-    taluka: "Miraj",
-    village: "Kupwad",
-    coordinates: "16.8524° N, 74.5815° E",
-    departmentId: "dept_1",
-    departmentName: "Plant Pathology",
-    assignedExpertId: "EXP-101",
-    assignedExpertName: "Dr. Anil Sharma",
-    status: "Submitted",
-    priority: "High",
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 2 * 86400000).toISOString()
-  },
-  {
-    id: "ISSUE-1003",
-    farmerId: "usr_farmer_vikram",
-    farmerName: "Vikram Shinde",
-    farmerMobile: "9766041235",
-    farmerEmail: "vikram.shinde@cropcare.in",
-    title: "Pink Bollworm Larvae Infestation in Cotton Squares",
-    cropName: "Cotton",
-    growthStage: "Boll Formation",
-    firstNoticedDate: new Date(Date.now() - 1 * 86400000).toISOString().split('T')[0],
-    category: "Pest Attack",
-    description: "Rosetted flower blossoms observed in 4 acres. Bolls show boreholes and internal fiber staining caused by pink bollworm caterpillars.",
-    images: ["https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=800&q=80"],
-    state: "Maharashtra",
-    district: "Jalgaon",
-    taluka: "Chalisgaon",
-    village: "Patonda",
-    coordinates: "20.4625° N, 75.0189° E",
-    departmentId: "dept_2",
-    departmentName: "Entomology",
-    assignedExpertId: "",
-    assignedExpertName: "Unassigned",
-    status: "Submitted",
-    priority: "Urgent",
-    createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
-  },
-  {
-    id: "ISSUE-1004",
-    farmerId: "usr_farmer_ganesh",
-    farmerName: "Ganesh Kulkarni",
-    farmerMobile: "9890012378",
-    farmerEmail: "ganesh.kulkarni@cropcare.in",
-    title: "Red Rot Stem Discoloration & Drying in Sugarcane",
-    cropName: "Sugarcane",
-    growthStage: "Grand Growth",
-    firstNoticedDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0],
-    category: "Crop Disease",
-    description: "Third and fourth leaves from top showing yellowing and withering. Cane split reveals red pith with distinct white transverse bands and alcoholic smell.",
-    images: ["https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80"],
-    state: "Maharashtra",
-    district: "Kolhapur",
-    taluka: "Karveer",
-    village: "Uchgaon",
-    coordinates: "16.7050° N, 74.2433° E",
-    departmentId: "dept_1",
-    departmentName: "Plant Pathology",
-    assignedExpertId: "EXP-101",
-    assignedExpertName: "Dr. Anil Sharma",
-    status: "Resolved",
-    priority: "High",
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 86400000).toISOString()
-  }
-];
-
-export const INITIAL_ISSUE_UPDATES = [
-  {
-    id: "upd_1001",
-    issueId: "ISSUE-1001",
-    farmerId: "usr_farmer_ramesh",
-    date: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
-    description: "Problem first reported with photos of bottom foliage.",
-    condition: "Initial",
-    image: "https://images.unsplash.com/photo-1592417817098-8f3d6eb1475a?auto=format&fit=crop&w=800&q=80",
-    createdAt: new Date(Date.now() - 3 * 86400000).toISOString()
-  },
-  {
-    id: "upd_1002",
-    issueId: "ISSUE-1001",
-    farmerId: "usr_farmer_ramesh",
-    date: new Date(Date.now() - 1 * 86400000).toISOString().split('T')[0],
-    description: "Sprayed Mancozeb as advised by Dr. Anil Sharma. Leaf spotting progression slowed.",
-    condition: "Recovering",
-    image: null,
-    createdAt: new Date(Date.now() - 1 * 86400000).toISOString()
-  }
-];
-
-export const INITIAL_EXPERT_RESPONSES = [
-  {
-    id: "resp_1001",
-    issueId: "ISSUE-1001",
-    expertId: "EXP-101",
-    expertName: "Dr. Anil Sharma",
-    expertTitle: "Senior Plant Pathologist",
-    expertInstitution: "Maharashtra State Agricultural University",
-    diagnosis: "Early Blight (Alternaria solani)",
-    possibleCause: "High leaf wetness duration combined with warm day temperatures (28-32°C).",
-    recommendation: "Immediate prophylactic spray of Mancozeb 75% WP or Azoxystrobin.",
-    treatment: "1. Spray Mancozeb 75 WP @ 2.5g/liter or Chlorothalonil 75 WP @ 2g/liter.\n2. In severe infection, spray Difenoconazole 25 EC @ 1ml/liter.\n3. Ensure uniform coverage on underside of leaves.",
-    prevention: "Prune bottom leaves touching soil. Avoid overhead sprinkler irrigation during late evenings.",
-    verified: true,
-    publishedToKb: true,
-    isResolved: false,
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString()
-  }
-];
-
-export const INITIAL_RESEARCH_CASES = [
-  {
-    id: "RC-301",
-    issueId: "ISSUE-1004",
-    title: "Atypical Sugarcane Red Rot Strain Resistance in Western Maharashtra",
-    crop: "Sugarcane",
-    category: "Crop Disease",
-    description: "Co-0238 variety showing accelerated wilting even under recommended fungicide schedules. Pathogen isolation in progress.",
-    assignedResearchers: ["Dr. Anil Sharma", "Dr. Sunita Deshmukh"],
-    department: "Plant Pathology",
-    status: "Investigation Started",
-    startDate: new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0],
-    lastUpdated: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0],
-    researchNotes: "PCR analysis confirms Colletotrichum falcatum with modified virulence markers.",
-    findings: "Field isolates exhibit tolerance up to 400ppm carbendazim.",
-    attachments: [],
-    conclusion: "Interim recommendation: Substitute with Trichoderma viride seed-sett dip."
-  }
-];
-
-export const INITIAL_KNOWLEDGE_ARTICLES = [
-  {
-    id: "KB-101",
-    title: "Tomato Early Blight Diagnosis & Complete Fungicidal Schedule",
-    crop: "Tomato",
-    category: "Crop Disease",
-    department: "Plant Pathology",
-    symptoms: "Concentric target spots on older leaves, yellow halo around lesions, stem cankers.",
-    diagnosis: "Alternaria solani fungal infection.",
-    treatment: "Spray Mancozeb 75% WP (2.5 g/L) followed by Difenoconazole 25% EC (1 ml/L) at 10-day intervals.",
-    preventiveMeasures: "Crop rotation with non-solanaceous crops, wider plant spacing for aeration.",
-    verifiedBy: "Dr. Anil Sharma (Plant Pathology Dept)",
-    verifiedDate: new Date().toISOString().split('T')[0],
-    helpfulYes: 38,
-    helpfulNo: 2,
-    views: 215,
-    image: "https://images.unsplash.com/photo-1592417817098-8f3d6eb1475a?auto=format&fit=crop&w=800&q=80",
-    relatedIssues: ["ISSUE-1001"]
-  },
-  {
-    id: "KB-102",
-    title: "Cotton Pink Bollworm Integrated Pest Management (IPM)",
-    crop: "Cotton",
-    category: "Pest Attack",
-    department: "Entomology",
-    symptoms: "Rosetted flowers, bore holes in developing bolls, damaged lint.",
-    diagnosis: "Pectinophora gossypiella larvae feeding inside bolls.",
-    treatment: "Install 5 pheromone traps/acre. Spray Profenofos 50% EC @ 2ml/L if ETL crossed (8 moths/trap/day).",
-    preventiveMeasures: "Timely termination of crop by December, avoid ratooning, install light traps.",
-    verifiedBy: "Dr. Sunita Deshmukh (Entomology Dept)",
-    verifiedDate: new Date().toISOString().split('T')[0],
-    helpfulYes: 54,
-    helpfulNo: 3,
-    views: 310,
-    image: "https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=800&q=80",
-    relatedIssues: ["ISSUE-1003"]
-  }
-];
-
-export const INITIAL_NOTIFICATIONS = [
-  {
-    id: "notif_1",
-    userId: "all_experts",
-    role: "Agricultural Expert / Researcher",
-    title: "New Crop Problem Reported",
-    message: "A new Cotton pest case (ISSUE-1003) has been submitted for Entomology review.",
-    read: false,
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    link: "/farmer/issues/ISSUE-1003"
-  },
-  {
-    id: "notif_2",
-    userId: "usr_farmer_ramesh",
-    role: "Farmer",
-    title: "Expert Response Received",
-    message: "Dr. Anil Sharma responded to your Tomato Early Blight case (ISSUE-1001).",
-    read: false,
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-    link: "/farmer/issues/ISSUE-1001"
-  }
-];
-
-export const INITIAL_USERS = [
-  {
-    id: "usr_farmer_ramesh",
-    uid: "usr_farmer_ramesh",
-    fullName: "Ramesh Patil",
-    email: "ramesh.patil@cropcare.in",
-    role: "Farmer",
-    status: "Active",
-    district: "Nashik",
-    taluka: "Dindori",
-    village: "Janori",
-    mobileNumber: "9822014589",
-    createdAt: new Date(Date.now() - 30 * 86400000).toISOString()
-  },
-  {
-    id: "EXP-101",
-    uid: "EXP-101",
-    fullName: "Dr. Anil Sharma",
-    email: "dr.anil.sharma@cropcare.gov.in",
-    role: "Agricultural Expert / Researcher",
-    status: "Approved",
-    department: "Plant Pathology",
-    departmentId: "dept_1",
-    title: "Senior Plant Pathologist",
-    institution: "Maharashtra State Agricultural University",
-    specialization: "Fungal Diseases & Integrated Pest Management",
-    verifiedBadge: true,
-    createdAt: new Date(Date.now() - 60 * 86400000).toISOString()
-  },
-  {
-    id: "EXP-102",
-    uid: "EXP-102",
-    fullName: "Dr. Sunita Deshmukh",
-    email: "dr.sunita@cropcare.gov.in",
-    role: "Agricultural Expert / Researcher",
-    status: "Pending Approval",
-    department: "Entomology",
-    departmentId: "dept_2",
-    title: "Entomology Specialist",
-    institution: "Dr. Panjabrao Deshmukh Krishi Vidyapeeth",
-    specialization: "Cotton Bollworm & Biological Control",
-    verifiedBadge: false,
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString()
-  }
-];
-
-// In-Memory Database Store Class
+// In-Memory Database Store Class with Real Cloud Firestore Synchronization
 class DataStore {
   constructor() {
     this.departments = [...INITIAL_DEPARTMENTS];
-    this.issues = [...INITIAL_ISSUES];
-    this.issueUpdates = [...INITIAL_ISSUE_UPDATES];
-    this.expertResponses = [...INITIAL_EXPERT_RESPONSES];
-    this.researchCases = [...INITIAL_RESEARCH_CASES];
-    this.knowledgeArticles = [...INITIAL_KNOWLEDGE_ARTICLES];
-    this.notifications = [...INITIAL_NOTIFICATIONS];
-    this.users = [...INITIAL_USERS];
+    this.issues = [];
+    this.issueUpdates = [];
+    this.expertResponses = [];
+    this.researchCases = [];
+    this.knowledgeArticles = [];
+    this.notifications = [];
+    this.users = [];
+
+    // 1. Immediately hydrate from the local Firestore snapshot cache
+    this.loadSnapshot();
+
+    // 2. Perform background synchronization from Cloud Firestore
+    this.syncFromFirestore().catch(() => {});
+
+    // 3. Periodic sync every 60 seconds
+    if (typeof setInterval !== 'undefined') {
+      const interval = setInterval(() => {
+        this.syncFromFirestore().catch(() => {});
+      }, 60000);
+      if (interval && interval.unref) interval.unref();
+    }
+  }
+
+  loadSnapshot() {
+    try {
+      if (fs.existsSync(SNAPSHOT_PATH)) {
+        const raw = fs.readFileSync(SNAPSHOT_PATH, 'utf-8');
+        const snapshot = JSON.parse(raw);
+        if (Array.isArray(snapshot.issues)) this.issues = snapshot.issues;
+        if (Array.isArray(snapshot.issue_updates)) this.issueUpdates = snapshot.issue_updates;
+        if (Array.isArray(snapshot.expert_responses)) this.expertResponses = snapshot.expert_responses;
+        if (Array.isArray(snapshot.research_cases)) this.researchCases = snapshot.research_cases;
+        if (Array.isArray(snapshot.knowledge_articles)) this.knowledgeArticles = snapshot.knowledge_articles;
+        if (Array.isArray(snapshot.users)) this.users = snapshot.users;
+        if (Array.isArray(snapshot.departments) && snapshot.departments.length) this.departments = snapshot.departments;
+        if (Array.isArray(snapshot.notifications)) this.notifications = snapshot.notifications;
+      }
+    } catch (e) {
+      console.warn("Notice: could not load firestore snapshot cache:", e.message);
+    }
+  }
+
+  persistSnapshot() {
+    try {
+      const data = {
+        issues: this.issues,
+        issue_updates: this.issueUpdates,
+        expert_responses: this.expertResponses,
+        research_cases: this.researchCases,
+        knowledge_articles: this.knowledgeArticles,
+        users: this.users,
+        departments: this.departments,
+        notifications: this.notifications
+      };
+      fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn("Notice: could not persist firestore snapshot cache:", e.message);
+    }
+  }
+
+  async syncFromFirestore() {
+    try {
+      const [remoteIssues, remoteUpdates, remoteResp, remoteKb, remoteUsers, remoteRc, remoteDepts] = await Promise.all([
+        fetchFirestoreCollection('issues'),
+        fetchFirestoreCollection('issue_updates'),
+        fetchFirestoreCollection('expert_responses'),
+        fetchFirestoreCollection('knowledge_articles'),
+        fetchFirestoreCollection('users'),
+        fetchFirestoreCollection('research_cases'),
+        fetchFirestoreCollection('departments')
+      ]);
+
+      if (Array.isArray(remoteIssues) && remoteIssues.length) {
+        this.issues = remoteIssues;
+      }
+      if (Array.isArray(remoteUpdates) && remoteUpdates.length) {
+        this.issueUpdates = remoteUpdates;
+      }
+      if (Array.isArray(remoteResp) && remoteResp.length) {
+        this.expertResponses = remoteResp;
+      }
+      if (Array.isArray(remoteKb) && remoteKb.length) {
+        this.knowledgeArticles = remoteKb;
+      }
+      if (Array.isArray(remoteUsers) && remoteUsers.length) {
+        this.users = remoteUsers;
+      }
+      if (Array.isArray(remoteRc) && remoteRc.length) {
+        this.researchCases = remoteRc;
+      }
+      if (Array.isArray(remoteDepts) && remoteDepts.length) {
+        this.departments = remoteDepts;
+      }
+
+      this.persistSnapshot();
+    } catch (err) {
+      console.warn("Firestore sync warning:", err.message);
+    }
   }
 
   // --- Issues Queries & Mutations ---
@@ -313,7 +233,7 @@ class DataStore {
       result = result.filter(i => i.farmerId === filter.farmerId);
     }
     if (filter.status) {
-      result = result.filter(i => i.status.toLowerCase() === filter.status.toLowerCase());
+      result = result.filter(i => i.status && i.status.toLowerCase() === filter.status.toLowerCase());
     }
     if (filter.departmentId) {
       result = result.filter(i => i.departmentId === filter.departmentId);
@@ -330,14 +250,14 @@ class DataStore {
     if (filter.search) {
       const q = filter.search.toLowerCase();
       result = result.filter(i => 
-        i.title.toLowerCase().includes(q) || 
-        i.cropName.toLowerCase().includes(q) || 
-        i.id.toLowerCase().includes(q)
+        (i.title && i.title.toLowerCase().includes(q)) || 
+        (i.cropName && i.cropName.toLowerCase().includes(q)) || 
+        (i.id && i.id.toLowerCase().includes(q))
       );
     }
 
     // Sort by latest createdAt
-    result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     const total = result.length;
     if (filter.limit) {
@@ -353,13 +273,13 @@ class DataStore {
   getIssueById(id) {
     const issue = this.issues.find(i => i.id === id);
     if (!issue) return null;
-    const updates = this.issueUpdates.filter(u => u.issueId === id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const updates = this.issueUpdates.filter(u => u.issueId === id).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     const responses = this.expertResponses.filter(r => r.issueId === id);
     return { ...issue, timeline: updates, responses };
   }
 
   createIssue(issueData) {
-    const newId = `ISSUE-${1000 + this.issues.length + 1}`;
+    const newId = issueData.id || `ISSUE-${Date.now()}`;
     const dept = this.departments.find(d => d.name === issueData.department || d.id === issueData.departmentId) || this.departments[0];
 
     const newIssue = {
@@ -416,6 +336,13 @@ class DataStore {
     this.issueUpdates.unshift(initialUpdate);
     this.notifications.unshift(newNotif);
 
+    this.persistSnapshot();
+
+    // Persist asynchronously to Cloud Firestore database
+    saveFirestoreDoc('issues', newIssue.id, newIssue).catch(() => {});
+    saveFirestoreDoc('issue_updates', initialUpdate.id, initialUpdate).catch(() => {});
+    saveFirestoreDoc('notifications', newNotif.id, newNotif).catch(() => {});
+
     return newIssue;
   }
 
@@ -424,7 +351,7 @@ class DataStore {
     if (!issue) return null;
 
     const newUpdate = {
-      id: `upd_${Date.now()}`,
+      id: updateData.id || `upd_${Date.now()}`,
       issueId,
       farmerId: updateData.farmerId || issue.farmerId,
       date: updateData.date || new Date().toISOString().split('T')[0],
@@ -439,6 +366,12 @@ class DataStore {
     issue.updatedAt = new Date().toISOString();
 
     this.issueUpdates.unshift(newUpdate);
+    this.persistSnapshot();
+
+    // Persist to Cloud Firestore database
+    saveFirestoreDoc('issue_updates', newUpdate.id, newUpdate).catch(() => {});
+    saveFirestoreDoc('issues', issue.id, issue).catch(() => {});
+
     return newUpdate;
   }
 
@@ -450,6 +383,8 @@ class DataStore {
       ...updateFields,
       updatedAt: new Date().toISOString()
     };
+    this.persistSnapshot();
+    saveFirestoreDoc('issues', id, this.issues[index]).catch(() => {});
     return this.issues[index];
   }
 
@@ -467,12 +402,12 @@ class DataStore {
 
   createExpertResponse(respData) {
     const newResponse = {
-      id: `resp_${Date.now()}`,
+      id: respData.id || `resp_${Date.now()}`,
       issueId: respData.issueId,
-      expertId: respData.expertId || "EXP-101",
-      expertName: respData.expertName || "Dr. Agricultural Specialist",
-      expertTitle: respData.expertTitle || "Plant Pathologist",
-      expertInstitution: respData.expertInstitution || "State Agricultural University",
+      expertId: respData.expertId || "qyIFQO4pkHf7Nu4a5W9K3vWa0FI2",
+      expertName: respData.expertName || "Dr. Rajesh Deshmukh (Senior Scientist)",
+      expertTitle: respData.expertTitle || "Agricultural Diagnostics & IPM",
+      expertInstitution: respData.expertInstitution || "State Agricultural University / ICAR",
       diagnosis: respData.diagnosis,
       possibleCause: respData.possibleCause || "",
       recommendation: respData.recommendation || "",
@@ -480,7 +415,7 @@ class DataStore {
       prevention: respData.prevention || "",
       notes: respData.notes || "",
       verified: respData.verified !== false,
-      publishedToKb: Boolean(respData.publishToKb),
+      publishedToKb: Boolean(respData.publishToKb || respData.publishedToKb),
       isResolved: Boolean(respData.isResolved),
       createdAt: new Date().toISOString()
     };
@@ -494,11 +429,12 @@ class DataStore {
       targetIssue.assignedExpertId = newResponse.expertId;
       targetIssue.assignedExpertName = newResponse.expertName;
       targetIssue.updatedAt = new Date().toISOString();
+      saveFirestoreDoc('issues', targetIssue.id, targetIssue).catch(() => {});
 
       // If publish to KB requested
-      if (respData.publishToKb) {
+      if (respData.publishToKb || respData.publishedToKb) {
         const kbArticle = {
-          id: `KB-${100 + this.knowledgeArticles.length + 1}`,
+          id: `KB-${Date.now()}`,
           title: `${targetIssue.cropName} Advisory: ${targetIssue.title}`,
           crop: targetIssue.cropName,
           category: targetIssue.category || "Crop Disease",
@@ -512,12 +448,16 @@ class DataStore {
           helpfulYes: 1,
           helpfulNo: 0,
           views: 1,
-          image: targetIssue.images[0] || null,
+          image: targetIssue.images?.[0] || null,
           relatedIssues: [targetIssue.id]
         };
         this.knowledgeArticles.unshift(kbArticle);
+        saveFirestoreDoc('knowledge_articles', kbArticle.id, kbArticle).catch(() => {});
       }
     }
+
+    this.persistSnapshot();
+    saveFirestoreDoc('expert_responses', newResponse.id, newResponse).catch(() => {});
 
     return newResponse;
   }
@@ -526,17 +466,20 @@ class DataStore {
   getResearchCases(filter = {}) {
     let result = [...this.researchCases];
     if (filter.status) {
-      result = result.filter(rc => rc.status.toLowerCase() === filter.status.toLowerCase());
+      result = result.filter(rc => rc.status && rc.status.toLowerCase() === filter.status.toLowerCase());
     }
     if (filter.department) {
-      result = result.filter(rc => rc.department.toLowerCase() === filter.department.toLowerCase());
+      result = result.filter(rc => rc.department && rc.department.toLowerCase() === filter.department.toLowerCase());
     }
     if (filter.crop) {
-      result = result.filter(rc => rc.crop.toLowerCase().includes(filter.crop.toLowerCase()));
+      result = result.filter(rc => rc.crop && rc.crop.toLowerCase().includes(filter.crop.toLowerCase()));
     }
     if (filter.search) {
       const q = filter.search.toLowerCase();
-      result = result.filter(rc => rc.title.toLowerCase().includes(q) || rc.id.toLowerCase().includes(q));
+      result = result.filter(rc => 
+        (rc.title && rc.title.toLowerCase().includes(q)) || 
+        (rc.id && rc.id.toLowerCase().includes(q))
+      );
     }
     return result;
   }
@@ -546,7 +489,7 @@ class DataStore {
   }
 
   createResearchCase(rcData) {
-    const newRcId = `RC-${300 + this.researchCases.length + 1}`;
+    const newRcId = rcData.id || `RC-${Date.now()}`;
     const targetIssue = this.issues.find(i => i.id === rcData.issueId);
 
     const newRc = {
@@ -570,9 +513,13 @@ class DataStore {
     if (targetIssue) {
       targetIssue.status = "Research Required";
       targetIssue.updatedAt = new Date().toISOString();
+      saveFirestoreDoc('issues', targetIssue.id, targetIssue).catch(() => {});
     }
 
     this.researchCases.unshift(newRc);
+    this.persistSnapshot();
+    saveFirestoreDoc('research_cases', newRc.id, newRc).catch(() => {});
+
     return newRc;
   }
 
@@ -584,6 +531,8 @@ class DataStore {
       ...updateFields,
       lastUpdated: new Date().toISOString().split('T')[0]
     };
+    this.persistSnapshot();
+    saveFirestoreDoc('research_cases', id, this.researchCases[index]).catch(() => {});
     return this.researchCases[index];
   }
 
@@ -601,12 +550,15 @@ class DataStore {
       expertCount: deptData.expertCount || 0
     };
     this.departments.push(newDept);
+    this.persistSnapshot();
+    saveFirestoreDoc('departments', newDept.id, newDept).catch(() => {});
     return newDept;
   }
 
   deleteDepartment(id) {
     const prevLen = this.departments.length;
     this.departments = this.departments.filter(d => d.id !== id);
+    this.persistSnapshot();
     return this.departments.length < prevLen;
   }
 
@@ -614,14 +566,17 @@ class DataStore {
   getKnowledgeArticles(filter = {}) {
     let result = [...this.knowledgeArticles];
     if (filter.category && filter.category !== 'All') {
-      result = result.filter(a => a.category.toLowerCase() === filter.category.toLowerCase());
+      result = result.filter(a => a.category && a.category.toLowerCase() === filter.category.toLowerCase());
     }
     if (filter.crop && filter.crop !== 'All') {
-      result = result.filter(a => a.crop.toLowerCase() === filter.crop.toLowerCase());
+      result = result.filter(a => a.crop && a.crop.toLowerCase() === filter.crop.toLowerCase());
     }
     if (filter.search) {
       const q = filter.search.toLowerCase();
-      result = result.filter(a => a.title.toLowerCase().includes(q) || a.symptoms.toLowerCase().includes(q));
+      result = result.filter(a => 
+        (a.title && a.title.toLowerCase().includes(q)) || 
+        (a.symptoms && a.symptoms.toLowerCase().includes(q))
+      );
     }
     return result;
   }
@@ -633,8 +588,10 @@ class DataStore {
   voteKnowledgeArticle(id, isHelpful) {
     const article = this.knowledgeArticles.find(a => a.id === id);
     if (!article) return null;
-    if (isHelpful) article.helpfulYes += 1;
-    else article.helpfulNo += 1;
+    if (isHelpful) article.helpfulYes = (article.helpfulYes || 0) + 1;
+    else article.helpfulNo = (article.helpfulNo || 0) + 1;
+    this.persistSnapshot();
+    saveFirestoreDoc('knowledge_articles', article.id, article).catch(() => {});
     return article;
   }
 
@@ -649,7 +606,11 @@ class DataStore {
 
   markNotificationRead(id) {
     const notif = this.notifications.find(n => n.id === id);
-    if (notif) notif.read = true;
+    if (notif) {
+      notif.read = true;
+      this.persistSnapshot();
+      saveFirestoreDoc('notifications', notif.id, notif).catch(() => {});
+    }
     return notif;
   }
 
@@ -727,7 +688,7 @@ class DataStore {
       result = result.filter(u => u.role === filter.role);
     }
     if (filter.status) {
-      result = result.filter(u => u.status.toLowerCase() === filter.status.toLowerCase());
+      result = result.filter(u => u.status && u.status.toLowerCase() === filter.status.toLowerCase());
     }
     return result;
   }
@@ -737,12 +698,15 @@ class DataStore {
     if (!user) return null;
     user.status = status;
     if (status === 'Approved') user.verifiedBadge = true;
+    this.persistSnapshot();
+    saveFirestoreDoc('users', user.id || user.uid, user).catch(() => {});
     return user;
   }
 
   deleteUser(id) {
     const prev = this.users.length;
     this.users = this.users.filter(u => u.id !== id && u.uid !== id);
+    this.persistSnapshot();
     return this.users.length < prev;
   }
 }

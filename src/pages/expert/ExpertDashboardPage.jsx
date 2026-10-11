@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   FileText, 
@@ -20,7 +20,12 @@ import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallbac
 
 export const ExpertDashboardPage = () => {
   const { currentUser } = useAuth();
-  const { issues, researchCases, expertResponses } = useData();
+  const { issues, researchCases, expertResponses, loadExpertData, loadResearchCases } = useData();
+
+  useEffect(() => {
+    loadExpertData(currentUser?.uid || currentUser?.id);
+    loadResearchCases();
+  }, [currentUser?.uid, currentUser?.id]);
 
   // Filter issues assigned to this expert or department
   const assignedIssues = issues.filter(i => 

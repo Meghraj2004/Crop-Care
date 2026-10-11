@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Filter, FileText, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -8,7 +8,11 @@ import { handleImageError, CROP_IMAGE_FALLBACKS } from '../../utils/imageFallbac
 
 export const AssignedCasesPage = () => {
   const { currentUser } = useAuth();
-  const { issues } = useData();
+  const { issues, loadExpertData } = useData();
+
+  useEffect(() => {
+    loadExpertData(currentUser?.uid || currentUser?.id);
+  }, [currentUser?.uid, currentUser?.id]);
 
   const [selectedCrop, setSelectedCrop] = useState('All');
   const [selectedCategory, setSelectedCategory] = useState('All');

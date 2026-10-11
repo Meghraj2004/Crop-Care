@@ -61,18 +61,18 @@ Returns aggregated metrics and recent activity for a specific farmer.
   "success": true,
   "data": {
     "stats": {
-      "totalIssues": 4,
-      "activeIssues": 3,
+      "totalIssues": 1,
+      "activeIssues": 0,
       "resolvedIssues": 1,
-      "pendingReview": 2
+      "pendingReview": 0
     },
     "recentIssues": [
       {
-        "id": "ISSUE-1001",
-        "title": "Severe Early Blight on Tomato Leaves",
-        "cropName": "Tomato",
-        "status": "Expert Responded",
-        "createdAt": "2026-10-08T08:00:00.000Z"
+        "id": "ISSUE-1791653114512",
+        "title": "Anthropic Pauses Free Claude Startup Perks Days After Launch",
+        "cropName": "Potato",
+        "status": "Resolved",
+        "createdAt": "2026-10-10T17:25:14.512Z"
       }
     ]
   }
@@ -147,7 +147,7 @@ Fetches a filtered list of reported crop problems.
   - `status` *(string)*: `Submitted` \| `Under Review` \| `Expert Responded` \| `Resolved` \| `Research Required`
   - `departmentId` *(string)*: Department ID.
   - `department` *(string)*: Department name.
-  - `crop` *(string)*: Filter by crop name (e.g. `Tomato`, `Cotton`).
+  - `crop` *(string)*: Filter by crop name (e.g. `Potato`, `Tomato`).
   - `search` *(string)*: Text search matching title, crop, or issue ID.
   - `page` *(number)*: Page number (default: 1).
   - `limit` *(number)*: Number of items per page.
@@ -157,18 +157,19 @@ Fetches a filtered list of reported crop problems.
   "success": true,
   "data": [
     {
-      "id": "ISSUE-1001",
-      "farmerId": "usr_farmer_ramesh",
-      "farmerName": "Ramesh Patil",
-      "farmerMobile": "9822014589",
-      "title": "Severe Early Blight on Tomato Leaves",
-      "cropName": "Tomato",
-      "growthStage": "Flowering & Fruit Formation",
-      "category": "Crop Disease",
+      "id": "ISSUE-1791653114512",
+      "farmerId": "jkvaWP7toANu07LkOTLDSZHxsHG2",
+      "farmerName": "Rohit Wagh",
+      "farmerMobile": "Not provided",
+      "title": "Anthropic Pauses Free Claude Startup Perks Days After Launch",
+      "cropName": "Potato",
+      "growthStage": "Flowering & Fruiting Stage",
+      "category": "Pest Attack",
       "departmentName": "Plant Pathology",
-      "status": "Expert Responded",
+      "assignedExpertName": "Dr. Rajesh Deshmukh (Senior Scientist)",
+      "status": "Resolved",
       "priority": "High",
-      "createdAt": "2026-10-08T08:00:00.000Z"
+      "createdAt": "2026-10-10T17:25:14.512Z"
     }
   ],
   "meta": { "total": 1, "count": 1 }
@@ -179,7 +180,7 @@ Fetches a filtered list of reported crop problems.
 
 ### `GET /api/issues/:id`
 Retrieves comprehensive details for an issue, including its complete chronological update timeline and expert diagnosis prescriptions.
-- **Path Params**: `id` *(string)* - The Issue ID (e.g. `ISSUE-1001`).
+- **Path Params**: `id` *(string)* - The Issue ID (e.g. `ISSUE-1791653114512`).
 - **Response `200 OK`**:
 ```json
 {

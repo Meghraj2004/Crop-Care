@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, Search, Filter, Trash2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
 export const ManageIssuesPage = () => {
-  const { issues } = useData();
+  const { issues, loadAdminData } = useData();
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    loadAdminData();
+  }, []);
 
   const filteredIssues = issues.filter(i => 
     !searchQuery ||
