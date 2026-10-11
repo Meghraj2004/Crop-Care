@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Lock, 
@@ -16,6 +16,20 @@ import { useAuth } from '../../context/AuthContext';
 export const AdminLoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [sessionExpiredMsg, setSessionExpiredMsg] = useState(() => {
+    try {
+      const msg = sessionStorage.getItem('cropcare_session_expired');
+      if (msg) {
+        sessionStorage.removeItem('cropcare_session_expired');
+        return msg;
+      }
+    } catch (_) {}
+    return '';
+  });
+
+  const notificationMessage = location.state?.message || sessionExpiredMsg;
 
   const [email, setEmail] = useState('admin123@gamil.com');
   const [password, setPassword] = useState('admin@123');
@@ -87,6 +101,21 @@ export const AdminLoginPage = () => {
 
         {/* Form Container */}
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-5">
+          {notificationMessage && (
+            <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 font-bold border ${
+              notificationMessage.toLowerCase().includes('expired')
+                ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : 'bg-purple-50 border-purple-200 text-purple-900'
+            }`}>
+              {notificationMessage.toLowerCase().includes('expired') ? (
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+              )}
+              <span>{notificationMessage}</span>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2 font-medium">
               <AlertCircle className="w-4 h-4 shrink-0" />

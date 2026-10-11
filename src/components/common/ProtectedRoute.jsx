@@ -4,16 +4,29 @@ import { ShieldAlert, Lock, ArrowRight, Clock, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { currentUser, isAuthenticated, logout } = useAuth();
+  const { currentUser, isAuthenticated, authLoading, logout } = useAuth();
   const location = useLocation();
 
+  // If initial session verification is still resolving, show smooth loader instead of premature redirect
+  if (authLoading && !currentUser) {
+    return (
+      <div className="min-h-[75vh] flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-semibold text-slate-500">Verifying secure session...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
+    const expiredNotice = sessionStorage.getItem('cropcare_session_expired');
     return (
       <Navigate 
         to="/login" 
         state={{ 
           from: location.pathname, 
-          message: 'Please sign in with your role credentials to access this portal.' 
+          message: expiredNotice || 'Please sign in with your role credentials to access this portal.' 
         }} 
         replace 
       />

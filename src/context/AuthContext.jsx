@@ -60,14 +60,114 @@ export const isExpertAccount = ({ email = '', fullName = '', displayName = '', r
   return false;
 };
 
+// Session Token Storage Key & Role-Based Duration Constants
+export const SESSION_STORAGE_KEY = 'cropcare_auth_session';
+
+export const SESSION_DURATIONS = {
+  'Farmer': 15 * 60 * 1000,                            // 15 minutes
+  'Agricultural Expert / Researcher': 15 * 60 * 1000,  // 15 minutes
+  'Agriculture Department Admin': 24 * 60 * 60 * 1000, // 24 hours
+};
+
+export const getSessionDuration = (role) => {
+  if (role === 'Agriculture Department Admin') {
+    return SESSION_DURATIONS['Agriculture Department Admin'];
+  }
+  if (role === 'Agricultural Expert / Researcher') {
+    return SESSION_DURATIONS['Agricultural Expert / Researcher'];
+  }
+  return SESSION_DURATIONS['Farmer'];
+};
+
+export const notifySessionExpired = (role) => {
+  const isAdm = role === 'Agriculture Department Admin';
+  const limitLabel = isAdm ? '24-hour' : '15-minute';
+  const message = `Your ${limitLabel} session has expired for security. Please sign in again.`;
+  try {
+    sessionStorage.setItem('cropcare_session_expired', message);
+  } catch (_) {}
+  return message;
+};
+
+export const createSessionToken = (user) => {
+  if (!user) return null;
+  const duration = getSessionDuration(user.role);
+  const now = Date.now();
+  const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+  const token = `cctok_${randomPart}`;
+
+  const session = {
+    token,
+    userId: user.uid || user.id,
+    role: user.role,
+    userProfile: user,
+    createdAt: now,
+    expiresAt: now + duration
+  };
+
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch (err) {
+    console.warn("Session storage notice:", err);
+  }
+  return session;
+};
+
+export const getStoredSession = () => {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session || !session.expiresAt) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+    if (Date.now() >= session.expiresAt) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return { expired: true, session };
+    }
+    return { valid: true, session };
+  } catch (err) {
+    try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+    return null;
+  }
+};
+
+export const clearStoredSession = () => {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch (err) {}
+};
+
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [authLoading, setAuthLoading] = useState(true);
+  // Synchronously initialize currentUser and session from valid local session token (avoids hard refresh logout)
+  const [currentUser, setCurrentUser] = useState(() => {
+    const check = getStoredSession();
+    if (check?.valid && check.session?.userProfile) {
+      return check.session.userProfile;
+    }
+    if (check?.expired) {
+      notifySessionExpired(check.session?.role);
+    }
+    return null;
+  });
 
-  // 1. Listen to Firebase Auth state
+  const [sessionInfo, setSessionInfo] = useState(() => {
+    const check = getStoredSession();
+    return check?.valid ? check.session : null;
+  });
+
+  const [users, setUsers] = useState([]);
+  const [authLoading, setAuthLoading] = useState(() => {
+    const check = getStoredSession();
+    return !check?.valid;
+  });
+
+  // 1. Listen to Firebase Auth state & sync with active session token
   useEffect(() => {
     if (!auth) {
       setAuthLoading(false);
@@ -75,6 +175,19 @@ export const AuthProvider = ({ children }) => {
     }
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      const activeSessionCheck = getStoredSession();
+
+      // If session is expired, enforce sign out immediately
+      if (activeSessionCheck?.expired) {
+        notifySessionExpired(activeSessionCheck.session?.role);
+        clearStoredSession();
+        setSessionInfo(null);
+        setCurrentUser(null);
+        if (auth) signOut(auth).catch(() => {});
+        setAuthLoading(false);
+        return;
+      }
+
       if (firebaseUser) {
         const emailClean = (firebaseUser.email || '').toLowerCase().trim();
         const isAdmin = isSuperAdminEmail(emailClean);
@@ -106,6 +219,18 @@ export const AuthProvider = ({ children }) => {
               verifiedBadge: true,
               createdAt: userProfile?.createdAt || new Date().toISOString()
             };
+
+            // Maintain session token and preserve expiresAt
+            const currentCheck = getStoredSession();
+            if (currentCheck?.valid) {
+              const updatedSession = { ...currentCheck.session, userProfile: adminDoc };
+              try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession)); } catch (_) {}
+              setSessionInfo(updatedSession);
+            } else {
+              const newSession = createSessionToken(adminDoc);
+              setSessionInfo(newSession);
+            }
+
             setCurrentUser(adminDoc);
           } else {
             const matchingKnown = users.find(u => (u.email || '').toLowerCase().trim() === emailClean);
@@ -139,6 +264,21 @@ export const AuthProvider = ({ children }) => {
               try {
                 await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'Agricultural Expert / Researcher', verifiedBadge: true }, { merge: true });
               } catch (e) {}
+            } else if (!userProfile && db) {
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), activeProfile, { merge: true });
+              } catch (e) {}
+            }
+
+            // Maintain session token and preserve expiresAt
+            const currentCheck = getStoredSession();
+            if (currentCheck?.valid) {
+              const updatedSession = { ...currentCheck.session, userProfile: activeProfile };
+              try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession)); } catch (_) {}
+              setSessionInfo(updatedSession);
+            } else {
+              const newSession = createSessionToken(activeProfile);
+              setSessionInfo(newSession);
             }
 
             setCurrentUser(activeProfile);
@@ -146,7 +286,7 @@ export const AuthProvider = ({ children }) => {
         } catch (err) {
           console.warn("Auth sync notice:", err);
           if (isAdmin) {
-            setCurrentUser({
+            const fallbackAdmin = {
               id: firebaseUser.uid,
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -154,7 +294,17 @@ export const AuthProvider = ({ children }) => {
               role: "Agriculture Department Admin",
               department: "Directorate of Agriculture",
               status: "Active"
-            });
+            };
+            const currentCheck = getStoredSession();
+            if (currentCheck?.valid) {
+              const updatedSession = { ...currentCheck.session, userProfile: fallbackAdmin };
+              try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession)); } catch (_) {}
+              setSessionInfo(updatedSession);
+            } else {
+              const newSession = createSessionToken(fallbackAdmin);
+              setSessionInfo(newSession);
+            }
+            setCurrentUser(fallbackAdmin);
           } else {
             const matchingKnown = users.find(u => (u.email || '').toLowerCase().trim() === emailClean);
             const isExpert = isExpertAccount({
@@ -165,7 +315,7 @@ export const AuthProvider = ({ children }) => {
             });
             const resolvedRole = isExpert ? 'Agricultural Expert / Researcher' : (matchingKnown?.role || 'Farmer');
 
-            setCurrentUser({
+            const fallbackUser = {
               id: firebaseUser.uid,
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -173,17 +323,60 @@ export const AuthProvider = ({ children }) => {
               role: resolvedRole,
               status: 'Active',
               verifiedBadge: isExpert
-            });
+            };
+
+            const currentCheck = getStoredSession();
+            if (currentCheck?.valid) {
+              const updatedSession = { ...currentCheck.session, userProfile: fallbackUser };
+              try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession)); } catch (_) {}
+              setSessionInfo(updatedSession);
+            } else {
+              const newSession = createSessionToken(fallbackUser);
+              setSessionInfo(newSession);
+            }
+            setCurrentUser(fallbackUser);
           }
         }
       } else {
-        setCurrentUser(null);
+        // Firebase has no user currently; check if valid session token still exists
+        const check = getStoredSession();
+        if (check?.valid && check.session?.userProfile) {
+          setCurrentUser(check.session.userProfile);
+          setSessionInfo(check.session);
+        } else {
+          setCurrentUser(null);
+          setSessionInfo(null);
+        }
       }
       setAuthLoading(false);
     });
 
     return () => unsubscribeAuth();
   }, [users]);
+
+  // Sentinel: Periodic Session Expiration Check (checks every 5s)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkSessionExpiry = () => {
+      const check = getStoredSession();
+      if (!check?.valid) {
+        notifySessionExpired(currentUser.role);
+        clearStoredSession();
+        setSessionInfo(null);
+        setCurrentUser(null);
+        if (auth) {
+          signOut(auth).catch(() => {});
+        }
+      } else {
+        setSessionInfo(check.session);
+      }
+    };
+
+    checkSessionExpiry();
+    const interval = setInterval(checkSessionExpiry, 5000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // 2. Real-Time Cloud Firestore Users Listener
   useEffect(() => {
@@ -277,6 +470,8 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
+      const adminSession = createSessionToken(userProfile);
+      setSessionInfo(adminSession);
       setCurrentUser(userProfile);
       return userProfile;
     }
@@ -339,7 +534,9 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // Adapt user role seamlessly and set active user
+    // Adapt user role seamlessly, create secure role session token, and set active user
+    const newSession = createSessionToken(userProfile);
+    setSessionInfo(newSession);
     setCurrentUser(userProfile);
     return userProfile;
   };
@@ -379,6 +576,8 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
+    const newSession = createSessionToken(newFarmer);
+    setSessionInfo(newSession);
     setCurrentUser(newFarmer);
     setUsers(prev => [newFarmer, ...prev]);
     realtimeService.broadcast('USER_UPDATED', newFarmer);
@@ -454,6 +653,14 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
+    // Update active session profile cache
+    const check = getStoredSession();
+    if (check?.valid) {
+      const updatedSession = { ...check.session, userProfile: updated };
+      try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession)); } catch (_) {}
+      setSessionInfo(updatedSession);
+    }
+
     setCurrentUser(updated);
     setUsers(prev => prev.map(u => u.id === targetId ? updated : u));
     realtimeService.broadcast('USER_UPDATED', updated);
@@ -471,6 +678,8 @@ export const AuthProvider = ({ children }) => {
     }
 
     setUsers(prev => prev.filter(u => u.id !== targetId));
+    clearStoredSession();
+    setSessionInfo(null);
     if (currentUser?.id === targetId || currentUser?.uid === targetId) {
       if (auth) {
         try { await signOut(auth); } catch (e) {}
@@ -481,8 +690,10 @@ export const AuthProvider = ({ children }) => {
     realtimeService.broadcast('USER_DELETED', { userId: targetId });
   };
 
-  // Sign out
+  // Sign out & clear session token
   const logout = async () => {
+    clearStoredSession();
+    setSessionInfo(null);
     if (auth) {
       try {
         await signOut(auth);
@@ -506,6 +717,10 @@ export const AuthProvider = ({ children }) => {
       isFarmer: currentUser?.role === 'Farmer',
       isExpert: currentUser?.role === 'Agricultural Expert / Researcher',
       isAdmin: currentUser?.role === 'Agriculture Department Admin',
+      sessionToken: sessionInfo?.token || null,
+      sessionExpiresAt: sessionInfo?.expiresAt || null,
+      sessionDurationMinutes: currentUser?.role === 'Agriculture Department Admin' ? 1440 : 15,
+      SESSION_DURATIONS,
       isExpertAccount
     }}>
       {children}

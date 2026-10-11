@@ -21,7 +21,8 @@ import {
   Building2,
   BarChart2,
   Radio,
-  CheckCircle2
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -112,8 +113,8 @@ export const Navbar = () => {
           {/* Desktop Nav Links - STRICTLY ROLE-BASED */}
           <nav className="hidden lg:flex items-center gap-1">
             <Link 
-              to="/home" 
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors ${location.pathname === '/home' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-700 hover:bg-slate-100'}`}
+              to="/" 
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors ${location.pathname === '/' || location.pathname === '/home' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-700 hover:bg-slate-100'}`}
             >
               {t('navHome')}
             </Link>
@@ -330,9 +331,18 @@ export const Navbar = () => {
                     <div className="px-4 py-2 border-b border-slate-100">
                       <div className="font-extrabold text-sm text-slate-900">{currentUser.fullName}</div>
                       <div className="text-[11px] text-slate-500 truncate">{currentUser.email}</div>
-                      <div className="mt-1.5">
+                      <div className="mt-1.5 flex items-center justify-between">
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isFarmer ? 'bg-emerald-100 text-emerald-800' : isExpert ? 'bg-teal-100 text-teal-800' : 'bg-purple-100 text-purple-800'}`}>
                           {currentUser.role}
+                        </span>
+                      </div>
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                        <span className="flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>Session: <strong className="text-slate-700">{isAdmin ? '24h limit' : '15m limit'}</strong></span>
+                        </span>
+                        <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                          Secure
                         </span>
                       </div>
                     </div>
@@ -479,9 +489,9 @@ export const Navbar = () => {
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white border-t border-slate-200 px-4 pt-3 pb-6 space-y-3 animate-fade-in">
           <Link
-            to="/home"
+            to="/"
             onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            className={`block py-2 text-sm font-bold ${location.pathname === '/' || location.pathname === '/home' ? 'text-emerald-600 font-extrabold' : 'text-slate-800 hover:text-emerald-600'}`}
           >
             {t('navHome')}
           </Link>

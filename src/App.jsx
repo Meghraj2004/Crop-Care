@@ -66,8 +66,8 @@ export default function App() {
 
               <main className="flex-1">
                 <Routes>
-                  {/* Root / Entry Route: Always opens Login Page first */}
-                  <Route path="/" element={<Navigate to="/login" replace />} />
+                  {/* Public / Entry Routes */}
+                  <Route path="/" element={<HomePage />} />
                   <Route path="/home" element={<HomePage />} />
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="/contact" element={<ContactPage />} />

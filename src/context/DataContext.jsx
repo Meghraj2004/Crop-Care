@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { INITIAL_DEPARTMENTS } from '../data/initialData';
+import { api } from '../services/api';
 import { db } from '../services/firebase';
 import { 
   collection, 
@@ -24,6 +25,7 @@ export const DataProvider = ({ children }) => {
   const [knowledgeArticles, setKnowledgeArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [firestorePermissionError, setFirestorePermissionError] = useState(false);
+  const [isLoadingApi, setIsLoadingApi] = useState(true);
   const [savedSolutions, setSavedSolutions] = useState(() => {
     try {
       const saved = localStorage.getItem('cropcare_saved_solutions') || localStorage.getItem('farmconnect_saved_solutions');
@@ -40,7 +42,53 @@ export const DataProvider = ({ children }) => {
     } catch (e) {}
   }, [savedSolutions]);
 
-  // 1. Pure Cloud Firestore Real-Time Listeners (No Realtime Database)
+  // 1. Primary: Load Baseline Data on-demand via REST API Endpoints
+  useEffect(() => {
+    let isMounted = true;
+    const fetchApiData = async () => {
+      try {
+        setIsLoadingApi(true);
+        const [deptsRes, issuesRes, respRes, rcRes, kbRes, notifRes] = await Promise.allSettled([
+          api.departments.getAll(),
+          api.issues.getAll(),
+          api.expert.getAll(),
+          api.research.getAll(),
+          api.knowledge.getAll(),
+          api.notifications.getAll()
+        ]);
+
+        if (!isMounted) return;
+
+        if (deptsRes.status === 'fulfilled' && deptsRes.value?.length) {
+          setDepartments(deptsRes.value);
+        }
+        if (issuesRes.status === 'fulfilled' && issuesRes.value) {
+          setIssues(issuesRes.value);
+        }
+        if (respRes.status === 'fulfilled' && respRes.value) {
+          setExpertResponses(respRes.value);
+        }
+        if (rcRes.status === 'fulfilled' && rcRes.value) {
+          setResearchCases(rcRes.value);
+        }
+        if (kbRes.status === 'fulfilled' && kbRes.value) {
+          setKnowledgeArticles(kbRes.value);
+        }
+        if (notifRes.status === 'fulfilled' && notifRes.value) {
+          setNotifications(notifRes.value);
+        }
+      } catch (err) {
+        console.warn("API initialization notice:", err?.message || err);
+      } finally {
+        if (isMounted) setIsLoadingApi(false);
+      }
+    };
+
+    fetchApiData();
+    return () => { isMounted = false; };
+  }, []);
+
+  // 2. Pure Cloud Firestore Real-Time Listeners (Secondary live sync channel)
   useEffect(() => {
     if (!db) return;
 
@@ -167,6 +215,7 @@ export const DataProvider = ({ children }) => {
       id: newIssueId,
       farmerId: user.uid || user.id,
       farmerName: user.fullName || "Farmer",
+      farmerEmail: user.email || "",
       farmerMobile: user.mobileNumber || "Not provided",
       title: newIssueData.title,
       cropName: newIssueData.cropName,
@@ -211,7 +260,22 @@ export const DataProvider = ({ children }) => {
       link: `/farmer/issues/${newIssueId}`
     };
 
-    // Save directly to Cloud Firestore
+    // Call Backend API Endpoint
+    try {
+      await api.issues.create({
+        ...newIssueData,
+        farmerId: user.uid || user.id,
+        farmerName: user.fullName || "Farmer",
+        farmerMobile: user.mobileNumber || "Not provided",
+        farmerEmail: user.email || "",
+        departmentId: dept.id,
+        departmentName: dept.name
+      });
+    } catch (apiErr) {
+      console.warn("API addIssue notice:", apiErr?.message);
+    }
+
+    // Save directly to Cloud Firestore (multi-sync persistence)
     if (db) {
       try {
         await setDoc(doc(db, 'issues', newIssueId), issueObj);
@@ -251,7 +315,12 @@ export const DataProvider = ({ children }) => {
       createdAt: new Date().toISOString()
     };
 
-    const nextStatus = updateData.condition === "Resolved" ? "Resolved" : "Farmer Updating";
+    // Call Backend API Endpoint
+    try {
+      await api.issues.addUpdate(issueId, updateData);
+    } catch (apiErr) {
+      console.warn("API addIssueUpdate notice:", apiErr?.message);
+    }
 
     if (db) {
       try {
@@ -294,6 +363,19 @@ export const DataProvider = ({ children }) => {
     };
 
     const nextStatus = responseObj.isResolved ? "Resolved" : "Expert Responded";
+
+    // Call Backend API Endpoint
+    try {
+      await api.expert.create({
+        ...responseObj,
+        expertId: expert.uid || expert.id,
+        expertName: expert.fullName,
+        expertTitle: expert.specialization || "Agricultural Expert",
+        expertInstitution: expert.institution || "Agriculture Department"
+      });
+    } catch (apiErr) {
+      console.warn("API addExpertResponse notice:", apiErr?.message);
+    }
 
     if (db) {
       try {
@@ -377,6 +459,23 @@ export const DataProvider = ({ children }) => {
       conclusion: "Under scientific study."
     };
 
+    // Call Backend API Endpoint
+    try {
+      await api.research.create({
+        issueId,
+        title: newRc.title,
+        crop: newRc.crop,
+        category: newRc.category,
+        description: newRc.description,
+        assignedResearchers: newRc.assignedResearchers,
+        department: newRc.department,
+        notes: researchDetails.notes,
+        findings: researchDetails.findings
+      });
+    } catch (e) {
+      console.warn("API convertToResearchCase notice:", e?.message);
+    }
+
     if (db) {
       try {
         await setDoc(doc(db, 'research_cases', newRcId), newRc);
@@ -396,6 +495,13 @@ export const DataProvider = ({ children }) => {
 
   // Update Research Case in Cloud Firestore
   const updateResearchCase = async (rcId, updatedFields) => {
+    // Call Backend API Endpoint
+    try {
+      await api.research.update(rcId, updatedFields);
+    } catch (e) {
+      console.warn("API updateResearchCase notice:", e?.message);
+    }
+
     if (db) {
       try {
         await updateDoc(doc(db, 'research_cases', rcId), {
@@ -422,6 +528,13 @@ export const DataProvider = ({ children }) => {
     const newYes = isHelpful ? target.helpfulYes + 1 : target.helpfulYes;
     const newNo = !isHelpful ? target.helpfulNo + 1 : target.helpfulNo;
 
+    // Call Backend API Endpoint
+    try {
+      await api.knowledge.vote(articleId, isHelpful);
+    } catch (e) {
+      console.warn("API voteKnowledgeArticle notice:", e?.message);
+    }
+
     if (db) {
       try {
         await updateDoc(doc(db, 'knowledge_articles', articleId), {
@@ -445,6 +558,13 @@ export const DataProvider = ({ children }) => {
       expertCount: deptData.expertCount || 0
     };
 
+    // Call Backend API Endpoint
+    try {
+      await api.departments.create(newDept);
+    } catch (e) {
+      console.warn("API addDepartment notice:", e?.message);
+    }
+
     if (db) {
       try {
         await setDoc(doc(db, 'departments', newDept.id), newDept);
@@ -458,6 +578,13 @@ export const DataProvider = ({ children }) => {
 
   // Delete Department in Cloud Firestore
   const deleteDepartment = async (deptId) => {
+    // Call Backend API Endpoint
+    try {
+      await api.departments.delete(deptId);
+    } catch (e) {
+      console.warn("API deleteDepartment notice:", e?.message);
+    }
+
     if (db) {
       try {
         await deleteDoc(doc(db, 'departments', deptId));
@@ -475,6 +602,13 @@ export const DataProvider = ({ children }) => {
 
   // Mark Notification Read in Cloud Firestore
   const markNotificationRead = async (notifId) => {
+    // Call Backend API Endpoint
+    try {
+      await api.notifications.markRead(notifId);
+    } catch (e) {
+      console.warn("API markNotificationRead notice:", e?.message);
+    }
+
     if (db) {
       try {
         await updateDoc(doc(db, 'notifications', notifId), { read: true });
@@ -727,8 +861,18 @@ export const DataProvider = ({ children }) => {
     }
   };
 
+  // On-Demand Role-Specific API Methods (Fetching ONLY required data)
+  const fetchFarmerDashboard = (farmerId) => api.dashboard.getFarmer(farmerId);
+  const fetchExpertDashboard = (expertId) => api.dashboard.getExpert(expertId);
+  const fetchAdminDashboard = () => api.dashboard.getAdmin();
+  const fetchFarmerIssues = (farmerId) => api.issues.getAll({ farmerId });
+  const fetchIssueById = (id) => api.issues.getById(id);
+  const fetchResearchCasesByQuery = (params) => api.research.getAll(params);
+  const fetchKnowledgeArticlesByQuery = (params) => api.knowledge.getAll(params);
+
   return (
     <DataContext.Provider value={{
+      api,
       departments,
       issues,
       issueUpdates,
@@ -738,6 +882,14 @@ export const DataProvider = ({ children }) => {
       notifications,
       savedSolutions,
       firestorePermissionError,
+      isLoadingApi,
+      fetchFarmerDashboard,
+      fetchExpertDashboard,
+      fetchAdminDashboard,
+      fetchFarmerIssues,
+      fetchIssueById,
+      fetchResearchCasesByQuery,
+      fetchKnowledgeArticlesByQuery,
       addIssue,
       addIssueUpdate,
       addExpertResponse,

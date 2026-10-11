@@ -12,7 +12,18 @@ export const MyProblemsPage = () => {
   const { issues } = useData();
   const { t } = useLanguage();
 
-  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerId === currentUser?.uid || (currentUser?.fullName && i.farmerName === currentUser.fullName));
+  const farmerIssues = issues.filter(i => {
+    if (!currentUser) return false;
+    const currentUid = (currentUser.uid || currentUser.id || '').toString();
+    const currentEmail = (currentUser.email || '').toLowerCase().trim();
+    const currentName = (currentUser.fullName || '').toLowerCase().trim();
+
+    const matchesId = i.farmerId && (i.farmerId.toString() === currentUid || (currentUser.id && i.farmerId.toString() === currentUser.id.toString()));
+    const matchesEmail = currentEmail && i.farmerEmail && i.farmerEmail.toLowerCase().trim() === currentEmail;
+    const matchesName = currentName && i.farmerName && i.farmerName.toLowerCase().trim() === currentName;
+
+    return Boolean(matchesId || matchesEmail || matchesName);
+  });
 
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,9 +31,9 @@ export const MyProblemsPage = () => {
   const filteredIssues = farmerIssues.filter(issue => {
     const matchesStatus = selectedStatus === 'All' || issue.status === selectedStatus;
     const matchesSearch = !searchQuery || 
-      issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      issue.cropName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      issue.id.toLowerCase().includes(searchQuery.toLowerCase());
+      (issue.title && issue.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (issue.cropName && issue.cropName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (issue.id && issue.id.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesStatus && matchesSearch;
   });
 

@@ -28,7 +28,18 @@ export const LoginPage = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const notificationMessage = location.state?.message;
+  const [sessionExpiredMsg, setSessionExpiredMsg] = useState(() => {
+    try {
+      const msg = sessionStorage.getItem('cropcare_session_expired');
+      if (msg) {
+        sessionStorage.removeItem('cropcare_session_expired');
+        return msg;
+      }
+    } catch (_) {}
+    return '';
+  });
+
+  const notificationMessage = location.state?.message || sessionExpiredMsg;
 
   // Real-time Email-sensitive account detection
   const cleanEmail = email.trim().toLowerCase();
@@ -169,8 +180,16 @@ export const LoginPage = () => {
         {/* Form Container */}
         <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-5">
           {notificationMessage && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 font-bold">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 font-bold border ${
+              notificationMessage.toLowerCase().includes('expired')
+                ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}>
+              {notificationMessage.toLowerCase().includes('expired') ? (
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              )}
               <span>{notificationMessage}</span>
             </div>
           )}

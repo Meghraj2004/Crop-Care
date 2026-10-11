@@ -27,7 +27,18 @@ export const FarmerDashboardPage = () => {
   const { t } = useLanguage();
 
   // Filter issues for current farmer
-  const farmerIssues = issues.filter(i => i.farmerId === currentUser?.id || i.farmerId === currentUser?.uid || (currentUser?.fullName && i.farmerName === currentUser.fullName));
+  const farmerIssues = issues.filter(i => {
+    if (!currentUser) return false;
+    const currentUid = (currentUser.uid || currentUser.id || '').toString();
+    const currentEmail = (currentUser.email || '').toLowerCase().trim();
+    const currentName = (currentUser.fullName || '').toLowerCase().trim();
+
+    const matchesId = i.farmerId && (i.farmerId.toString() === currentUid || (currentUser.id && i.farmerId.toString() === currentUser.id.toString()));
+    const matchesEmail = currentEmail && i.farmerEmail && i.farmerEmail.toLowerCase().trim() === currentEmail;
+    const matchesName = currentName && i.farmerName && i.farmerName.toLowerCase().trim() === currentName;
+
+    return Boolean(matchesId || matchesEmail || matchesName);
+  });
 
   // Statistics
   const totalReported = farmerIssues.length;
